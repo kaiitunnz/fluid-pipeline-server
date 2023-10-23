@@ -1,0 +1,25 @@
+{
+  "server": {
+    "hostname": "143.248.136.109",
+    "port": 8440,
+    "chunk_size": 1024,
+    "max_image_size": 20971520,
+    "num_workers": 4,
+    "sample_file": "/media/test/noppanat/pipeline_server/res/sample.jpg"
+  },
+  "ui_detector": {
+    "path": "/media/test/noppanat/models/yolo_clay_cpu.pt",
+    "device": "cpu"
+  },
+  "text_recognizer": {
+    "batch_size": 1
+  },
+  "icon_labeller": {
+    "path": "/media/test/noppanat/models/efficientnet_op_cpu.pt",
+    "device": "cpu"
+  },
+  "special_elements": {
+    "text": ["TEXT", "LABEL", "TEXT_INPUT", "BUTTON", "SPINNER"],
+    "icon": ["PICTOGRAM"]
+  }
+}
