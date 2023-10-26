@@ -35,7 +35,10 @@ class Worker:
     def serve(self, module: Any):
         while True:
             self.logger.debug(f"[{self.name}] Waiting for a message.")
-            out_channel, args = self.channel.get()
+            msg = self.channel.get()
+            if msg is None:
+                return
+            out_channel, args = msg
             assert isinstance(out_channel, SimpleQueue)
             out_channel.put(self.func(*args, module=module))
 
@@ -45,4 +48,7 @@ class Worker:
         if not force:
             while not self.channel.empty():
                 pass
-        self.thread.join()
+            self.channel.put(None)
+            self.thread.join()
+        else:
+            return

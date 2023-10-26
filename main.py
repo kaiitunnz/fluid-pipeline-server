@@ -8,15 +8,16 @@ import torch
 
 sys.path.append(os.path.abspath(".."))
 
-from fluid_ai.icon import ClassifierIconLabeller
-
+# from fluid_ai.icon import ClassifierIconLabeller
 # from fluid_ai.ocr import EasyOCR
+from fluid_ai.icon import DummyIconLabeller
 from fluid_ai.ocr import DummyOCR
 from fluid_ai.pipeline import UiDetectionPipeline
 from fluid_ai.ui.detection import YoloUiDetector
 
 from src.threading.server import PipelineServer as ThreadingServer
 from src.sequential.server import PipelineServer as SequentialServer
+from src.multiprocessing.server import PipelineServer as MultiprocessingServer
 
 
 def parse_args() -> Namespace:
@@ -37,7 +38,7 @@ def parse_args() -> Namespace:
         "-m",
         "--mode",
         action="store",
-        choices=["sequential", "threading"],
+        choices=["sequential", "threading", "multiprocessing"],
         default="threading",
         help="Pipeline server mode",
     )
@@ -50,12 +51,13 @@ def pipeline_from_config(config: Dict[str, Any]) -> UiDetectionPipeline:
         device=torch.device(config["ui_detector"]["device"]),
     )
     # text_recognizer = EasyOCR(batch_size=config["text_recognizer"]["batch_size"])
+    # icon_labeller = ClassifierIconLabeller(
+    #     config["icon_labeller"]["path"],
+    #     batched=True,
+    #     device=torch.device(config["icon_labeller"]["device"]),
+    # )
     text_recognizer = DummyOCR()
-    icon_labeller = ClassifierIconLabeller(
-        config["icon_labeller"]["path"],
-        batched=True,
-        device=torch.device(config["icon_labeller"]["device"]),
-    )
+    icon_labeller = DummyIconLabeller()
     return UiDetectionPipeline(
         detector,
         text_recognizer,
@@ -80,6 +82,14 @@ def main(args: Namespace):
         )
     elif args.mode == "threading":
         pipeline_server = ThreadingServer(
+            **config["server"],
+            pipeline=pipeline,
+            verbose=args.verbose,
+            benchmark=args.benchmark is not None,
+            benchmark_file=args.benchmark,
+        )
+    elif args.mode == "multiprocessing":
+        pipeline_server = MultiprocessingServer(
             **config["server"],
             pipeline=pipeline,
             verbose=args.verbose,

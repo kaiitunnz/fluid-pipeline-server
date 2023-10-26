@@ -4,17 +4,17 @@ import os
 import socket as sock
 import time
 from io import BytesIO
-from multiprocessing.pool import ThreadPool
-from queue import SimpleQueue
 from typing import Any, Dict, List, Optional
 
 import numpy as np
+import torch
+import torch.multiprocessing as tmp
 from fluid_ai.base import UiElement
 from fluid_ai.pipeline import UiDetectionPipeline
 from PIL import Image, ImageFile
 
 from src.benchmark import Benchmarker
-from src.threading.manager import PipelineManager
+from src.multiprocessing.manager import PipelineManager, PipelineHelper
 from src.utils import *
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -33,9 +33,7 @@ def _save_input_image(img: Image.Image, prefix: str = "img"):
 
 def _handle_connection(
     conn: sock.socket,
-    detector_ch: SimpleQueue,
-    text_recognizer_ch: SimpleQueue,
-    icon_labeller_ch: SimpleQueue,
+    helper: PipelineHelper,
     textual_elements: List[str],
     icon_elements: List[str],
     chunk_size: int,
@@ -54,8 +52,6 @@ def _handle_connection(
         )
         return
 
-    result_queue = SimpleQueue()
-
     try:
         packet_size = int.from_bytes(readall(conn, 4, chunk_size), "big", signed=False)
         log_debug(logger, addr, f"Receiving a packet of size {packet_size} bytes.")
@@ -71,14 +67,16 @@ def _handle_connection(
         packet = BytesIO(data)
         img = Image.open(packet)
         # _save_input_image(img)
-        screenshot_img = np.asarray(img)
-        log_debug(logger, addr, f"Received an image of shape {screenshot_img.shape}.")
+        screenshot_img = torch.tensor(np.asarray(img))
+        log_debug(
+            logger, addr, f"Received an image of shape {tuple(screenshot_img.size())}."
+        )
 
         # Detect UI elements.
         log_debug(logger, addr, "Detecting UI elements.")
         detection_start = time.time()  # bench
-        detector_ch.put((result_queue, (screenshot_img,)))
-        detected: List[UiElement] = result_queue.get()
+        helper.detect(screenshot_img)
+        detected = helper.wait_detect()
         detection_time = time.time() - detection_start  # bench
         log_debug(logger, addr, f"Found {len(detected)} UI elements.")
 
@@ -97,18 +95,18 @@ def _handle_connection(
         # Extract UI info.
         log_debug(logger, addr, "Extracting UI info.")
         if benchmarker is None:
-            text_recognizer_ch.put((result_queue, (text_elems,)))
-            icon_labeller_ch.put((result_queue, (icon_elems,)))
-            results.extend(result_queue.get())
-            results.extend(result_queue.get())
+            helper.recognize_text(text_elems)
+            helper.label_icons(icon_elems)
+            results.extend(helper.wait_recognize_text())
+            results.extend(helper.wait_label_icons())
         else:
             text_start = time.time()  # bench
-            text_recognizer_ch.put((result_queue, (text_elems,)))
-            results.extend(result_queue.get())
+            helper.recognize_text(text_elems)
+            results.extend(helper.wait_recognize_text())
             text_time = time.time() - text_start  # bench
             icon_start = time.time()  # bench
-            icon_labeller_ch.put((result_queue, (icon_elems,)))
-            results.extend(result_queue.get())
+            helper.label_icons(icon_elems)
+            results.extend(helper.wait_label_icons())
             icon_time = time.time() - icon_start  # bench
 
         log_debug(logger, addr, "Done.")
@@ -141,8 +139,8 @@ def _handle_connection(
         conn.close()
 
 
-def _ui_to_json(screenshot_img: np.ndarray, elems: List[UiElement], **kwargs) -> str:
-    h, w, *_ = screenshot_img.shape
+def _ui_to_json(screenshot_img: torch.Tensor, elems: List[UiElement], **kwargs) -> str:
+    h, w, *_ = screenshot_img.size()
     data = {"img_shape": [w, h], "elements": [_elem_to_dict(e) for e in elems]}
     data.update(kwargs)
     return json.dumps(data)
@@ -173,7 +171,6 @@ class PipelineServer:
     verbose: bool
     logger: logging.Logger
     benchmarker: Optional[Benchmarker]
-    manager: PipelineManager
 
     def __init__(
         self,
@@ -196,7 +193,6 @@ class PipelineServer:
         self.num_workers = num_workers
         self.verbose = verbose
         self.logger = PipelineServer._init_logger(verbose)
-        self.manager = PipelineManager(pipeline, self.logger)
 
         benchmark_metrics = [
             "Waiting time",
@@ -215,35 +211,39 @@ class PipelineServer:
         )
 
     def start(self):
+        # Required to prevent PyTorch from hanging
+        # https://github.com/pytorch/pytorch/issues/82843
+        torch.set_num_threads(1)
+
         self.socket = sock.socket(sock.AF_INET, sock.SOCK_STREAM)
         self.socket.bind((self.hostname, self.port))
         self.socket.listen(1)
-        self.manager.start()
 
-        self.logger.info(
-            f'Pipeline server started serving at "{self.hostname}:{self.port} (PID={os.getpid()})".'
-        )
+        with tmp.Manager() as sync_manager:
+            manager = PipelineManager(self.pipeline, sync_manager, self.logger)
+            manager.start()
+            self.logger.info(
+                f'Pipeline server started serving at "{self.hostname}:{self.port} (PID={os.getpid()})".'
+            )
 
-        with ThreadPool(processes=self.num_workers) as pool:
-            while True:
-                conn, addr = self.socket.accept()
-                self.logger.info(f'Got connection from "{addr[0]}:{addr[1]}"')
-                pool.apply_async(
-                    _handle_connection,
-                    args=(
-                        conn,
-                        self.manager.detector_ch,
-                        self.manager.text_recognizer_ch,
-                        self.manager.icon_labeller_ch,
-                        self.manager.pipeline.textual_elements,
-                        self.manager.pipeline.icon_elements,
-                        self.chunk_size,
-                        self.max_image_size,
-                        self.logger,
-                        self.benchmarker,
-                        time.time(),
-                    ),
-                )
+            with tmp.Pool(processes=self.num_workers) as pool:
+                while True:
+                    conn, addr = self.socket.accept()
+                    self.logger.info(f'Got connection from "{addr[0]}:{addr[1]}"')
+                    pool.apply_async(
+                        _handle_connection,
+                        args=(
+                            conn,
+                            manager.get_helper(),
+                            manager.pipeline.textual_elements,
+                            manager.pipeline.icon_elements,
+                            self.chunk_size,
+                            self.max_image_size,
+                            self.logger,
+                            self.benchmarker,
+                            time.time(),
+                        ),
+                    )
 
     def warmup(self, sample_file: str):
         self.logger.info("Warming up the pipeline...")

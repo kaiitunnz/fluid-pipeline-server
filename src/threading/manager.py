@@ -84,7 +84,10 @@ class PipelineManager:
         self.text_recognizer_worker.start()
         self.icon_labeller_worker.start()
 
-    def terminate(self):
-        self.detector_worker.terminate()
-        self.text_recognizer_worker.terminate()
-        self.icon_labeller_worker.terminate()
+    def terminate(self, force: bool = False):
+        self.detector_worker.terminate(force)
+        self.text_recognizer_worker.terminate(force)
+        self.icon_labeller_worker.terminate(force)
+
+    def __del__(self):
+        self.terminate(force=True)
