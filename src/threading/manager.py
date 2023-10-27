@@ -1,6 +1,6 @@
 import logging
-from queue import SimpleQueue
-from typing import Any, List
+from collections import OrderedDict
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 from fluid_ai.base import UiElement
@@ -9,6 +9,8 @@ from fluid_ai.ocr import BaseOCR
 from fluid_ai.pipeline import UiDetectionPipeline
 from fluid_ai.ui.detection import BaseUiDetector
 
+from src.benchmark import Benchmarker
+from src.threading.helper import PipelineHelper, PipelineManagerHelper
 from src.threading.worker import Worker
 
 
@@ -37,56 +39,57 @@ def label_icons(
 
 class PipelineManager:
     pipeline: UiDetectionPipeline
-    detector: BaseUiDetector
-    text_recognizer: BaseOCR
-    icon_labeller: BaseIconLabeller
-
-    detector_ch: SimpleQueue
-    text_recognizer_ch: SimpleQueue
-    icon_labeller_ch: SimpleQueue
-
-    detector_worker: Worker
-    text_recognizer_worker: Worker
-    icon_labeller_worker: Worker
-
+    helper: PipelineManagerHelper
+    workers: Dict[str, Worker]
     logger: logging.Logger
 
-    def __init__(self, pipeline: UiDetectionPipeline, logger: logging.Logger):
+    def __init__(
+        self,
+        pipeline: UiDetectionPipeline,
+        logger: logging.Logger,
+        benchmarker: Optional[Benchmarker],
+    ):
         self.pipeline = pipeline
-        self.detector = pipeline.detector
-        self.text_recognizer = pipeline.text_recognizer
-        self.icon_labeller = pipeline.icon_labeller
+        self.helper = PipelineManagerHelper(pipeline, logger, benchmarker)
+        self.workers = OrderedDict()
         self.logger = logger
 
     def start(self):
-        self.detector_ch = SimpleQueue()
-        self.detector_worker = Worker(
-            detect, self.detector_ch, self.detector, self.logger, "detector"
-        )
-        self.text_recognizer_ch = SimpleQueue()
-        self.text_recognizer_worker = Worker(
-            recognize_texts,
-            self.text_recognizer_ch,
-            self.text_recognizer,
+        name = "detector"
+        self.workers[name] = Worker(
+            detect,
+            self.helper.detector_ch,
+            self.pipeline.detector,
             self.logger,
-            "text_recognizer",
-        )
-        self.icon_labeller_ch = SimpleQueue()
-        self.icon_labeller_worker = Worker(
-            label_icons,
-            self.icon_labeller_ch,
-            self.icon_labeller,
-            self.logger,
-            "icon_labeller",
+            name,
         )
 
-        self.detector_worker.start()
-        self.text_recognizer_worker.start()
-        self.icon_labeller_worker.start()
+        name = "text_recognizer"
+        self.workers[name] = Worker(
+            recognize_texts,
+            self.helper.text_recognizer_ch,
+            self.pipeline.text_recognizer,
+            self.logger,
+            name,
+        )
+
+        name = "icon_labeller"
+        self.workers[name] = Worker(
+            label_icons,
+            self.helper.icon_labeller_ch,
+            self.pipeline.icon_labeller,
+            self.logger,
+            name,
+        )
+
+        for worker in self.workers.values():
+            worker.start()
+
+    def get_helper(self) -> PipelineHelper:
+        return self.helper.get_helper()
 
     def terminate(self, force: bool = False):
         self.logger.info("Terminating the worker processes...")
-        self.detector_worker.terminate(force)
-        self.text_recognizer_worker.terminate(force)
-        self.icon_labeller_worker.terminate(force)
-        self.logger.info("Done.")
+        for worker in self.workers.values():
+            worker.terminate(force)
+            self.logger.info(f"'{worker.name}' worker has terminated.")

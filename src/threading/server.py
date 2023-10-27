@@ -7,7 +7,6 @@ import sys
 import time
 from io import BytesIO
 from multiprocessing.pool import Pool, ThreadPool
-from queue import SimpleQueue
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -16,34 +15,21 @@ from fluid_ai.pipeline import UiDetectionPipeline
 from PIL import Image, ImageFile
 
 from src.benchmark import Benchmarker
+from src.threading.helper import PipelineHelper
 from src.threading.manager import PipelineManager
-from src.utils import *
+from src.utils import readall
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 DEFAULT_BENCHMARK_FILE = "benchmark.csv"
 SAVE_IMG_DIR = "res"
-
-img_count: int = 0
-
-
-def _save_input_image(img: Image.Image, prefix: str = "img"):
-    global img_count
-
-    img_count += 1
-    img.save(os.path.join(SAVE_IMG_DIR, f"{prefix}{img_count}.jpg"))
+SAVE_IMG = False
 
 
 def _handle_connection(
     conn: sock.socket,
-    detector_ch: SimpleQueue,
-    text_recognizer_ch: SimpleQueue,
-    icon_labeller_ch: SimpleQueue,
-    textual_elements: List[str],
-    icon_elements: List[str],
+    helper: PipelineHelper,
     chunk_size: int,
     max_image_size: int,
-    logger: logging.Logger,
-    benchmarker: Optional[Benchmarker],
     start_time: float,
 ):
     waiting_time = time.time() - start_time  # bench
@@ -51,93 +37,91 @@ def _handle_connection(
     try:
         addr = conn.getpeername()
     except Exception as e:
-        logger.error(
+        helper.logger.error(
             f"The following exception occurred while attempting to connect: {e}"
         )
         return
 
-    result_queue = SimpleQueue()
-
     try:
         packet_size = int.from_bytes(readall(conn, 4, chunk_size), "big", signed=False)
-        log_debug(logger, addr, f"Receiving a packet of size {packet_size} bytes.")
+        helper.log_debug(addr, f"Receiving a packet of size {packet_size} bytes.")
         if packet_size > max_image_size:
-            log_error(
-                logger, addr, f"The packet size exceeds the maximum allowable size."
+            helper.log_error(
+                addr, f"The packet size exceeds the maximum allowable size."
             )
             conn.close()
             return
 
         data = readall(conn, packet_size, chunk_size)
-        log_debug(logger, addr, f"Received a packet of size {len(data)} bytes.")
+        helper.log_debug(addr, f"Received a packet of size {len(data)} bytes.")
         packet = BytesIO(data)
         img = Image.open(packet)
-        # _save_input_image(img)
+        if SAVE_IMG:
+            helper.save_image(img, SAVE_IMG_DIR)
         screenshot_img = np.asarray(img)
-        log_debug(logger, addr, f"Received an image of shape {screenshot_img.shape}.")
+        helper.log_debug(addr, f"Received an image of shape {screenshot_img.shape}.")
 
         # Detect UI elements.
-        log_debug(logger, addr, "Detecting UI elements.")
+        helper.log_debug(addr, "Detecting UI elements.")
         detection_start = time.time()  # bench
-        detector_ch.put((result_queue, (screenshot_img,)))
-        detected: List[UiElement] = result_queue.get()
+        helper.detect(screenshot_img)
+        detected = helper.wait_result()
         detection_time = time.time() - detection_start  # bench
-        log_debug(logger, addr, f"Found {len(detected)} UI elements.")
+        helper.log_debug(addr, f"Found {len(detected)} UI elements.")
 
         # Partition the result.
         text_elems = []
         icon_elems = []
         results: List[UiElement] = []
         for e in detected:
-            if e.name in textual_elements:
+            if e.name in helper.textual_elements:
                 text_elems.append(e)
-            elif e.name in icon_elements:
+            elif e.name in helper.icon_elements:
                 icon_elems.append(e)
             else:
                 results.append(e)
 
         # Extract UI info.
-        log_debug(logger, addr, "Extracting UI info.")
-        if benchmarker is None:
-            text_recognizer_ch.put((result_queue, (text_elems,)))
-            icon_labeller_ch.put((result_queue, (icon_elems,)))
-            results.extend(result_queue.get())
-            results.extend(result_queue.get())
+        helper.log_debug(addr, "Extracting UI info.")
+        if helper.benchmarker is None:
+            helper.recognize_text(text_elems)
+            helper.label_icons(icon_elems)
+            results.extend(helper.wait_result())
+            results.extend(helper.wait_result())
         else:
             text_start = time.time()  # bench
-            text_recognizer_ch.put((result_queue, (text_elems,)))
-            results.extend(result_queue.get())
+            helper.recognize_text(text_elems)
+            results.extend(helper.wait_result())
             text_time = time.time() - text_start  # bench
             icon_start = time.time()  # bench
-            icon_labeller_ch.put((result_queue, (icon_elems,)))
-            results.extend(result_queue.get())
+            helper.label_icons(icon_elems)
+            results.extend(helper.wait_result())
             icon_time = time.time() - icon_start  # bench
 
         processing_time = time.time() - detection_start  # bench
-        if benchmarker is None:
+        if helper.benchmarker is None:
             results_json = _ui_to_json(screenshot_img, results).encode("utf-8")
         else:
             entry = [waiting_time, detection_time, text_time, icon_time, processing_time]  # type: ignore
-            benchmarker.add(entry)
-            metrics = {"keys": benchmarker.metrics, "values": entry}
+            helper.benchmarker.add(entry)
+            metrics = {"keys": helper.benchmarker.metrics, "values": entry}
             results_json = _ui_to_json(screenshot_img, results, metrics=metrics).encode(
                 "utf-8"
             )
 
-        log_debug(
-            logger,
+        helper.log_debug(
             addr,
             f"Sending back the response of size {len(results_json)} bytes.",
         )
 
         conn.sendall(len(results_json).to_bytes(4, "big", signed=False))
-        log_debug(logger, addr, f"Sent response size: {len(results_json)}")
+        helper.log_debug(addr, f"Sent response size: {len(results_json)}")
         conn.sendall(results_json)
-        log_info(logger, addr, "Response sent.")
+        helper.log_info(addr, "Response sent.")
     except Exception as e:
-        log_error(logger, addr, f"The following exception occurred: {e}")
+        helper.log_error(addr, f"The following exception occurred: {e}")
     finally:
-        log_info(logger, addr, "Connection closed.")
+        helper.log_info(addr, "Connection closed.")
         conn.close()
 
 
@@ -173,7 +157,6 @@ class PipelineServer:
     verbose: bool
     logger: logging.Logger
     benchmarker: Optional[Benchmarker]
-    manager: PipelineManager
 
     def __init__(
         self,
@@ -196,7 +179,6 @@ class PipelineServer:
         self.num_workers = num_workers
         self.verbose = verbose
         self.logger = PipelineServer._init_logger(verbose)
-        self.manager = PipelineManager(pipeline, self.logger)
 
         benchmark_metrics = [
             "Waiting time",
@@ -223,10 +205,12 @@ class PipelineServer:
         self.socket = sock.socket(sock.AF_INET, sock.SOCK_STREAM)
         self.socket.bind((self.hostname, self.port))
         self.socket.listen(1)
-        self.manager.start()
+
+        manager = PipelineManager(self.pipeline, self.logger, self.benchmarker)
+        manager.start()
 
         with ThreadPool(processes=self.num_workers) as pool:
-            self._register_signal_handlers(pool)
+            self._register_signal_handlers(pool, manager)
             self.logger.info(
                 f'Pipeline server started serving at "{self.hostname}:{self.port} (PID={os.getpid()})".'
             )
@@ -237,15 +221,9 @@ class PipelineServer:
                     _handle_connection,
                     args=(
                         conn,
-                        self.manager.detector_ch,
-                        self.manager.text_recognizer_ch,
-                        self.manager.icon_labeller_ch,
-                        self.manager.pipeline.textual_elements,
-                        self.manager.pipeline.icon_elements,
+                        manager.get_helper(),
                         self.chunk_size,
                         self.max_image_size,
-                        self.logger,
-                        self.benchmarker,
                         time.time(),
                     ),
                 )
@@ -255,7 +233,7 @@ class PipelineServer:
         sample = np.asarray(Image.open(sample_file))
         self.pipeline.detect([sample])
 
-    def _register_signal_handlers(self, pool: Pool):
+    def _register_signal_handlers(self, pool: Pool, manager: PipelineManager):
         term_signals = (signal.SIGTERM, signal.SIGINT, signal.SIGQUIT)
 
         def _exit(signum: int, _):
@@ -264,7 +242,7 @@ class PipelineServer:
             )
             pool.close()
             pool.join()
-            self.manager.terminate(force=True)
+            manager.terminate(force=True)
             self.logger.info("Server successfully exited.")
             sys.exit(0)
 

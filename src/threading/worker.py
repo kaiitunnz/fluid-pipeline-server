@@ -10,7 +10,7 @@ class Worker:
     name: Optional[str]
     module: Any
     logger: logging.Logger
-    thread: Optional[threading.Thread] = None
+    _thread: Optional[threading.Thread] = None
 
     def __init__(
         self,
@@ -27,10 +27,10 @@ class Worker:
         self.logger = logger
 
     def start(self):
-        self.thread = threading.Thread(
+        self._thread = threading.Thread(
             target=self.serve, name=self.name, args=(self.module,), daemon=False
         )
-        self.thread.start()
+        self._thread.start()
 
     def serve(self, module: Any):
         try:
@@ -45,12 +45,8 @@ class Worker:
         except EOFError:
             self.logger.info(f"'{self.name}' worker's channel closed.")
 
-    def terminate(self, force: bool = False):
-        if self.thread is None:
+    def terminate(self, _force: bool = False):
+        if self._thread is None:
             raise ValueError("The worker thread has not been started.")
-        if not force:
-            while not self.channel.empty():
-                pass
         self.channel.put(None)
-        self.thread.join()
-        self.logger.info(f"'{self.name}' worker has terminated.")
+        self._thread.join()
