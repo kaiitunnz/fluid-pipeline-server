@@ -31,5 +31,7 @@ class PipelineManager:
         )
         self.worker.start()
 
-    def terminate(self):
-        self.worker.terminate()
+    def terminate(self, force: bool = False):
+        self.logger.info("Terminating the worker processes...")
+        self.worker.terminate(force)
+        self.logger.info("Done.")

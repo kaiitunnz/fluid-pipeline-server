@@ -85,9 +85,8 @@ class PipelineManager:
         self.icon_labeller_worker.start()
 
     def terminate(self, force: bool = False):
+        self.logger.info("Terminating the worker processes...")
         self.detector_worker.terminate(force)
         self.text_recognizer_worker.terminate(force)
         self.icon_labeller_worker.terminate(force)
-
-    def __del__(self):
-        self.terminate(force=True)
+        self.logger.info("Done.")

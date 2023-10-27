@@ -1,7 +1,9 @@
 import json
 import logging
 import os
+import signal
 import socket as sock
+import sys
 import time
 from io import BytesIO
 from typing import Any, Dict, List, Optional
@@ -9,36 +11,27 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import torch
 import torch.multiprocessing as tmp
-from fluid_ai.base import UiElement
-from fluid_ai.pipeline import UiDetectionPipeline
 from PIL import Image, ImageFile
+from fluid_ai.base import UiElement
+from multiprocessing.managers import SyncManager
+from multiprocessing.pool import Pool
 
 from src.benchmark import Benchmarker
-from src.multiprocessing.manager import PipelineManager, PipelineHelper
-from src.utils import *
+from src.multiprocessing.constructor import PipelineConstructor
+from src.multiprocessing.manager import PipelineHelper, PipelineManager
+from src.utils import readall
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 DEFAULT_BENCHMARK_FILE = "benchmark.csv"
 SAVE_IMG_DIR = "res"
-
-img_count: int = 0
-
-
-def _save_input_image(img: Image.Image, prefix: str = "img"):
-    global img_count
-
-    img_count += 1
-    img.save(os.path.join(SAVE_IMG_DIR, f"{prefix}{img_count}.jpg"))
+SAVE_IMG = False
 
 
 def _handle_connection(
     conn: sock.socket,
     helper: PipelineHelper,
-    textual_elements: List[str],
-    icon_elements: List[str],
     chunk_size: int,
     max_image_size: int,
-    logger: logging.Logger,
     benchmarker: Optional[Benchmarker],
     start_time: float,
 ):
@@ -47,53 +40,54 @@ def _handle_connection(
     try:
         addr = conn.getpeername()
     except Exception as e:
-        logger.error(
+        helper.logger.error(
             f"The following exception occurred while attempting to connect: {e}"
         )
         return
 
     try:
         packet_size = int.from_bytes(readall(conn, 4, chunk_size), "big", signed=False)
-        log_debug(logger, addr, f"Receiving a packet of size {packet_size} bytes.")
+        helper.log_debug(addr, f"Receiving a packet of size {packet_size} bytes.")
         if packet_size > max_image_size:
-            log_error(
-                logger, addr, f"The packet size exceeds the maximum allowable size."
+            helper.log_error(
+                addr, f"The packet size exceeds the maximum allowable size."
             )
             conn.close()
             return
 
         data = readall(conn, packet_size, chunk_size)
-        log_debug(logger, addr, f"Received a packet of size {len(data)} bytes.")
+        helper.log_debug(addr, f"Received a packet of size {len(data)} bytes.")
         packet = BytesIO(data)
         img = Image.open(packet)
-        # _save_input_image(img)
+        if SAVE_IMG:
+            helper.save_image(img, SAVE_IMG_DIR)
         screenshot_img = torch.tensor(np.asarray(img))
-        log_debug(
-            logger, addr, f"Received an image of shape {tuple(screenshot_img.size())}."
+        helper.log_debug(
+            addr, f"Received an image of shape {tuple(screenshot_img.size())}."
         )
 
         # Detect UI elements.
-        log_debug(logger, addr, "Detecting UI elements.")
+        helper.log_debug(addr, "Detecting UI elements.")
         detection_start = time.time()  # bench
         helper.detect(screenshot_img)
         detected = helper.wait_detect()
         detection_time = time.time() - detection_start  # bench
-        log_debug(logger, addr, f"Found {len(detected)} UI elements.")
+        helper.log_debug(addr, f"Found {len(detected)} UI elements.")
 
         # Partition the result.
         text_elems = []
         icon_elems = []
         results: List[UiElement] = []
         for e in detected:
-            if e.name in textual_elements:
+            if e.name in helper.textual_elements:
                 text_elems.append(e)
-            elif e.name in icon_elements:
+            elif e.name in helper.icon_elements:
                 icon_elems.append(e)
             else:
                 results.append(e)
 
         # Extract UI info.
-        log_debug(logger, addr, "Extracting UI info.")
+        helper.log_debug(addr, "Extracting UI info.")
         if benchmarker is None:
             helper.recognize_text(text_elems)
             helper.label_icons(icon_elems)
@@ -109,8 +103,6 @@ def _handle_connection(
             results.extend(helper.wait_label_icons())
             icon_time = time.time() - icon_start  # bench
 
-        log_debug(logger, addr, "Done.")
-
         processing_time = time.time() - detection_start  # bench
         if benchmarker is None:
             results_json = _ui_to_json(screenshot_img, results).encode("utf-8")
@@ -122,20 +114,19 @@ def _handle_connection(
                 "utf-8"
             )
 
-        log_debug(
-            logger,
+        helper.log_debug(
             addr,
             f"Sending back the response of size {len(results_json)} bytes.",
         )
 
         conn.sendall(len(results_json).to_bytes(4, "big", signed=False))
-        log_debug(logger, addr, f"Sent response size: {len(results_json)}")
+        helper.log_debug(addr, f"Sent response size: {len(results_json)}")
         conn.sendall(results_json)
-        log_info(logger, addr, "Response sent.")
+        helper.log_info(addr, "Response sent.")
     except Exception as e:
-        log_error(logger, addr, f"The following exception occurred: {e}")
+        helper.log_error(addr, f"The following exception occurred: {e}")
     finally:
-        log_info(logger, addr, "Connection closed.")
+        helper.log_info(addr, "Connection closed.")
         conn.close()
 
 
@@ -163,7 +154,7 @@ def _elem_to_dict(elem: UiElement) -> Dict[str, Any]:
 class PipelineServer:
     hostname: str
     port: str
-    pipeline: UiDetectionPipeline
+    pipeline: PipelineConstructor
     chunk_size: int
     max_image_size: int
     num_workers: int
@@ -177,7 +168,7 @@ class PipelineServer:
         *,
         hostname: str,
         port: str,
-        pipeline: UiDetectionPipeline,
+        pipeline: PipelineConstructor,
         chunk_size: int = -1,
         max_image_size: int = -1,
         num_workers: int = 4,
@@ -210,10 +201,15 @@ class PipelineServer:
             else None
         )
 
-    def start(self):
+    def start(self, warmup_image: Optional[str] = None):
+        self.logger.info("Starting the pipeline server...")
+
         # Required to prevent PyTorch from hanging
         # https://github.com/pytorch/pytorch/issues/82843
         torch.set_num_threads(1)
+
+        if torch.cuda.is_available():
+            tmp.set_start_method("forkserver")  # To enable CUDA.
 
         self.socket = sock.socket(sock.AF_INET, sock.SOCK_STREAM)
         self.socket.bind((self.hostname, self.port))
@@ -222,11 +218,15 @@ class PipelineServer:
         with tmp.Manager() as sync_manager:
             manager = PipelineManager(self.pipeline, sync_manager, self.logger)
             manager.start()
-            self.logger.info(
-                f'Pipeline server started serving at "{self.hostname}:{self.port} (PID={os.getpid()})".'
-            )
+
+            if warmup_image is not None:
+                self._warmup(manager.get_helper(), warmup_image)
 
             with tmp.Pool(processes=self.num_workers) as pool:
+                self._register_signal_handlers(pool, sync_manager, manager)
+                self.logger.info(
+                    f'Pipeline server started serving at "{self.hostname}:{self.port} (PID={os.getpid()})".'
+                )
                 while True:
                     conn, addr = self.socket.accept()
                     self.logger.info(f'Got connection from "{addr[0]}:{addr[1]}"')
@@ -235,21 +235,58 @@ class PipelineServer:
                         args=(
                             conn,
                             manager.get_helper(),
-                            manager.pipeline.textual_elements,
-                            manager.pipeline.icon_elements,
                             self.chunk_size,
                             self.max_image_size,
-                            self.logger,
                             self.benchmarker,
                             time.time(),
                         ),
                     )
 
-    def warmup(self, sample_file: str):
+    def _warmup(self, helper: PipelineHelper, warmup_image: str):
         self.logger.info("Warming up the pipeline...")
-        sample = np.asarray(Image.open(sample_file))
-        self.pipeline.detect([sample])
-        self.logger.info("Done")
+        img = Image.open(warmup_image)
+        screenshot_img = torch.tensor(np.asarray(img))
+
+        # Detect UI elements.
+        helper.detect(screenshot_img)
+        detected = helper.wait_detect()
+
+        # Partition the result.
+        text_elems = []
+        icon_elems = []
+        for e in detected:
+            if e.name in helper.textual_elements:
+                text_elems.append(e)
+            elif e.name in helper.icon_elements:
+                icon_elems.append(e)
+
+        # Extract UI info.
+        helper.recognize_text(text_elems)
+        helper.label_icons(icon_elems)
+        helper.wait_recognize_text()
+        helper.wait_label_icons()
+
+    def _register_signal_handlers(
+        self,
+        pool: Pool,
+        sync_manager: SyncManager,
+        manager: PipelineManager,
+    ):
+        term_signals = (signal.SIGTERM, signal.SIGINT, signal.SIGQUIT)
+
+        def _exit(signum: int, _):
+            self.logger.info(
+                f"Termination signal received: {signal.Signals(signum).name}"
+            )
+            pool.close()
+            pool.join()
+            manager.terminate(force=True)
+            sync_manager.shutdown()
+            self.logger.info("Server successfully exited.")
+            sys.exit(0)
+
+        for sig in term_signals:
+            signal.signal(sig, _exit)
 
     @classmethod
     def _init_logger(cls, verbose: bool = True) -> logging.Logger:

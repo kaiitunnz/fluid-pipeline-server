@@ -33,11 +33,14 @@ class Worker:
         self.thread.start()
 
     def serve(self, module: Any):
-        while True:
-            self.logger.debug(f"[{self.name}] Waiting for a message.")
-            out_channel, args = self.channel.get()
-            assert isinstance(out_channel, SimpleQueue)
-            out_channel.put(self.func(*args, module=module))
+        try:
+            while True:
+                self.logger.debug(f"[{self.name}] Waiting for a message.")
+                out_channel, args = self.channel.get()
+                assert isinstance(out_channel, SimpleQueue)
+                out_channel.put(self.func(*args, module=module))
+        except EOFError:
+            self.logger.info(f"'{self.name}' worker's channel closed.")
 
     def terminate(self, force: bool = False):
         if self.thread is None:
@@ -45,4 +48,6 @@ class Worker:
         if not force:
             while not self.channel.empty():
                 pass
+        self.channel.put(None)
         self.thread.join()
+        self.logger.info(f"'{self.name}' worker has terminated.")

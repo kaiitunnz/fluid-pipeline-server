@@ -1,10 +1,12 @@
 import json
 import logging
 import os
+import signal
 import socket as sock
+import sys
 import time
 from io import BytesIO
-from multiprocessing.pool import ThreadPool
+from multiprocessing.pool import Pool, ThreadPool
 from queue import SimpleQueue
 from typing import Any, Dict, List, Optional
 
@@ -65,7 +67,6 @@ def _handle_connection(
         results: List[UiElement] = result_queue.get()
         processing_time = time.time() - processing_start  # bench
         log_debug(logger, addr, f"Found {len(results)} UI elements.")
-        log_debug(logger, addr, "Done.")
 
         if benchmarker is None:
             results_json = _ui_to_json(screenshot_img, results).encode("utf-8")
@@ -164,17 +165,22 @@ class PipelineServer:
             else None
         )
 
-    def start(self):
+    def start(self, warmup_image: Optional[str] = None):
+        self.logger.info("Starting the pipeline server...")
+
+        if warmup_image is not None:
+            self.warmup(warmup_image)
+
         self.socket = sock.socket(sock.AF_INET, sock.SOCK_STREAM)
         self.socket.bind((self.hostname, self.port))
         self.socket.listen(1)
         self.manager.start()
 
-        self.logger.info(
-            f'Pipeline server started serving at "{self.hostname}:{self.port} (PID={os.getpid()})".'
-        )
-
         with ThreadPool(processes=self.num_workers) as pool:
+            self._register_signal_handlers(pool)
+            self.logger.info(
+                f'Pipeline server started serving at "{self.hostname}:{self.port} (PID={os.getpid()})".'
+            )
             while True:
                 conn, addr = self.socket.accept()
                 self.logger.info(f'Got connection from "{addr[0]}:{addr[1]}"')
@@ -195,7 +201,22 @@ class PipelineServer:
         self.logger.info("Warming up the pipeline...")
         sample = np.asarray(Image.open(sample_file))
         self.pipeline.detect([sample])
-        self.logger.info("Done")
+
+    def _register_signal_handlers(self, pool: Pool):
+        term_signals = (signal.SIGTERM, signal.SIGINT, signal.SIGQUIT)
+
+        def _exit(signum: int, _):
+            self.logger.info(
+                f"Termination signal received: {signal.Signals(signum).name}"
+            )
+            pool.close()
+            pool.join()
+            self.manager.terminate(force=True)
+            self.logger.info("Server successfully exited.")
+            sys.exit(0)
+
+        for sig in term_signals:
+            signal.signal(sig, _exit)
 
     @classmethod
     def _init_logger(cls, verbose: bool = True) -> logging.Logger:

@@ -9,14 +9,14 @@
   },
   "ui_detector": {
     "path": "/media/test/noppanat/models/yolo_clay_cpu.pt",
-    "device": "cpu"
+    "device": "cuda:0"
   },
   "text_recognizer": {
     "batch_size": 1
   },
   "icon_labeller": {
     "path": "/media/test/noppanat/models/efficientnet_op_cpu.pt",
-    "device": "cpu"
+    "device": "cuda:0"
   },
   "special_elements": {
     "text": ["TEXT", "LABEL", "TEXT_INPUT", "BUTTON", "SPINNER"],

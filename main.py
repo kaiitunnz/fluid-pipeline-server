@@ -10,6 +10,7 @@ sys.path.append(os.path.abspath(".."))
 
 # from fluid_ai.icon import ClassifierIconLabeller
 # from fluid_ai.ocr import EasyOCR
+
 from fluid_ai.icon import DummyIconLabeller
 from fluid_ai.ocr import DummyOCR
 from fluid_ai.pipeline import UiDetectionPipeline
@@ -17,6 +18,7 @@ from fluid_ai.ui.detection import YoloUiDetector
 
 from src.threading.server import PipelineServer as ThreadingServer
 from src.sequential.server import PipelineServer as SequentialServer
+from src.multiprocessing.constructor import ModuleConstructor, PipelineConstructor
 from src.multiprocessing.server import PipelineServer as MultiprocessingServer
 
 
@@ -67,12 +69,38 @@ def pipeline_from_config(config: Dict[str, Any]) -> UiDetectionPipeline:
     )
 
 
+def constructor_from_config(config: Dict[str, Any]) -> PipelineConstructor:
+    detector = ModuleConstructor(
+        YoloUiDetector,
+        config["ui_detector"]["path"],
+        device=torch.device(config["ui_detector"]["device"]),
+    )
+    # text_recognizer = ModuleConstructor(
+    #     EasyOCR, batch_size=config["text_recognizer"]["batch_size"]
+    # )
+    # icon_labeller = ModuleConstructor(
+    #     ClassifierIconLabeller,
+    #     config["icon_labeller"]["path"],
+    #     batched=True,
+    #     device=torch.device(config["icon_labeller"]["device"]),
+    # )
+    text_recognizer = ModuleConstructor(DummyOCR)
+    icon_labeller = ModuleConstructor(DummyIconLabeller)
+    return PipelineConstructor(
+        detector,
+        text_recognizer,
+        icon_labeller,
+        config["special_elements"]["text"],
+        config["special_elements"]["icon"],
+    )
+
+
 def main(args: Namespace):
     with open("config.json", "r") as f:
         config = json.load(f)
     sample_file = config["server"].pop("sample_file")
-    pipeline = pipeline_from_config(config)
     if args.mode == "sequential":
+        pipeline = pipeline_from_config(config)
         pipeline_server = SequentialServer(
             **config["server"],
             pipeline=pipeline,
@@ -81,6 +109,7 @@ def main(args: Namespace):
             benchmark_file=args.benchmark,
         )
     elif args.mode == "threading":
+        pipeline = pipeline_from_config(config)
         pipeline_server = ThreadingServer(
             **config["server"],
             pipeline=pipeline,
@@ -89,6 +118,7 @@ def main(args: Namespace):
             benchmark_file=args.benchmark,
         )
     elif args.mode == "multiprocessing":
+        pipeline = constructor_from_config(config)
         pipeline_server = MultiprocessingServer(
             **config["server"],
             pipeline=pipeline,
@@ -98,8 +128,7 @@ def main(args: Namespace):
         )
     else:
         raise NotImplementedError()
-    pipeline_server.warmup(sample_file)
-    pipeline_server.start()
+    pipeline_server.start(warmup_image=sample_file)
 
 
 if __name__ == "__main__":
