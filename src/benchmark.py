@@ -1,5 +1,5 @@
 from threading import Lock
-from typing import Any, Dict, List, TextIO
+from typing import Any, Dict, List, Optional, TextIO
 
 Entry = List[Any]
 
@@ -9,7 +9,7 @@ class Benchmarker:
     output_file: TextIO
     max_num_entries: int
     record: List[Entry]
-    lock: Lock
+    lock: Optional[Lock]
 
     def __init__(
         self,
@@ -17,12 +17,13 @@ class Benchmarker:
         output_file: str,
         header: bool = True,
         max_num_entries: int = 200,
+        lock: bool = True,
     ):
         self.metrics = metrics
         self.output_file = open(output_file, "w")
         self.record = []
         self.max_num_entries = max_num_entries
-        self.lock = Lock()
+        self.lock = Lock() if lock else None
 
         # Write the header.
         if header:
@@ -51,7 +52,11 @@ class Benchmarker:
         self.output_file.close()
 
     def _write_entry(self, entry: Entry):
-        self.lock.acquire()
-        self.output_file.write(",".join(str(v) for v in entry) + "\n")
-        self.output_file.flush()
-        self.lock.release()
+        if self.lock is None:
+            self.output_file.write(",".join(str(v) for v in entry) + "\n")
+            self.output_file.flush()
+        else:
+            self.lock.acquire()
+            self.output_file.write(",".join(str(v) for v in entry) + "\n")
+            self.output_file.flush()
+            self.lock.release()

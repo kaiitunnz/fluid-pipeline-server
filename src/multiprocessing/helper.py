@@ -1,13 +1,14 @@
 import os
 from PIL import Image
 from queue import Queue
-from typing import Callable, List, Tuple
+from typing import Callable, List, Optional, Tuple
 
 from fluid_ai.base import UiElement
 from multiprocessing.managers import DictProxy, SyncManager
 from threading import Condition
 from torch import Tensor
 
+from src.multiprocessing.benchmark import BenchmarkListener, Benchmarker
 from src.multiprocessing.constructor import PipelineConstructor
 from src.multiprocessing.logging import LogListener, Logger
 
@@ -15,6 +16,7 @@ from src.multiprocessing.logging import LogListener, Logger
 class PipelineManagerHelper:
     manager: SyncManager
     log_listener: LogListener
+    benchmark_listener: Optional[BenchmarkListener]
 
     detector_ch: Queue
     text_recognizer_ch: Queue
@@ -35,9 +37,11 @@ class PipelineManagerHelper:
         pipeline: PipelineConstructor,
         manager: SyncManager,
         log_listener: LogListener,
+        benchmark_listener: Optional[BenchmarkListener],
     ):
         self.manager = manager
         self.log_listener = log_listener
+        self.benchmark_listener = benchmark_listener
 
         self.detector_ch = manager.Queue()
         self.text_recognizer_ch = manager.Queue()
@@ -53,7 +57,7 @@ class PipelineManagerHelper:
         self._count = 0
         self._conditions = manager.dict()
 
-    def clone(self) -> "PipelineHelper":
+    def get_helper(self) -> "PipelineHelper":
         key = self._count
         self._count += 1
 
@@ -71,6 +75,11 @@ class PipelineManagerHelper:
             self.textual_elements,
             self.icon_elements,
             self.log_listener.get_logger(),
+            (
+                None
+                if self.benchmark_listener is None
+                else self.benchmark_listener.get_benchmarker()
+            ),
             condition,
             self._conditions,
         )
@@ -90,6 +99,7 @@ class PipelineHelper:
     icon_elements: List[str]
 
     logger: Logger
+    benchmarker: Optional[Benchmarker]
 
     condition: Condition
     manager_conditions: DictProxy
@@ -106,6 +116,7 @@ class PipelineHelper:
         textual_elements: List[str],
         icon_elements: List[str],
         logger: Logger,
+        benchmarker: Optional[Benchmarker],
         condition: Condition,
         manager_conditions: DictProxy,
     ):
@@ -119,6 +130,7 @@ class PipelineHelper:
         self.textual_elements = textual_elements
         self.icon_elements = icon_elements
         self.logger = logger
+        self.benchmarker = benchmarker
         self.condition = condition
         self.manager_conditions = manager_conditions
 

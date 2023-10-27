@@ -1,5 +1,5 @@
 import logging
-from typing import Any, List
+from typing import Any, List, Optional
 
 from fluid_ai.base import UiElement
 from fluid_ai.icon import BaseIconLabeller
@@ -8,6 +8,8 @@ from fluid_ai.ui.detection import BaseUiDetector
 from multiprocessing.managers import SyncManager
 from torch import Tensor
 
+import src.benchmark as bench
+from src.multiprocessing.benchmark import BenchmarkListener, Benchmarker
 from src.multiprocessing.constructor import PipelineConstructor
 from src.multiprocessing.helper import PipelineHelper, PipelineManagerHelper
 from src.multiprocessing.logging import LogListener
@@ -49,16 +51,26 @@ class PipelineManager:
     log_listener: LogListener
     logger: logging.Logger
 
+    benchmark_listener: Optional[BenchmarkListener]
+
     def __init__(
         self,
         pipeline: PipelineConstructor,
         manager: SyncManager,
         logger: logging.Logger,
+        benchmarker: Optional[bench.Benchmarker],
     ):
         self.pipeline = pipeline
         self.log_listener = LogListener(logger, manager.Queue())
-        self._helper = PipelineManagerHelper(pipeline, manager, self.log_listener)
         self.logger = logger
+        self.benchmark_listener = (
+            None
+            if benchmarker is None
+            else BenchmarkListener(benchmarker, manager.Queue(), logger)
+        )
+        self._helper = PipelineManagerHelper(
+            pipeline, manager, self.log_listener, self.benchmark_listener
+        )
 
     def start(self):
         logger = self.log_listener.get_logger()
@@ -89,15 +101,18 @@ class PipelineManager:
         )
 
         self.log_listener.start()
+        if self.benchmark_listener is not None:
+            self.benchmark_listener.start()
         self.detector_worker.start()
         self.text_recognizer_worker.start()
         self.icon_labeller_worker.start()
 
     def get_helper(self) -> PipelineHelper:
-        return self._helper.clone()
+        return self._helper.get_helper()
 
     def terminate(self, force: bool = False):
         self.logger.info("Terminating the worker processes...")
+
         workers = (
             self.detector_worker,
             self.text_recognizer_worker,
@@ -107,3 +122,9 @@ class PipelineManager:
         for worker in workers:
             worker.terminate(force)
             self.logger.info(f"'{worker.name}' worker has terminated.")
+
+        optional_workers = (self.benchmark_listener,)
+        for worker in optional_workers:
+            if worker is not None:
+                worker.terminate(force)
+                self.logger.info(f"'{worker.name}' worker has terminated.")

@@ -32,7 +32,6 @@ def _handle_connection(
     helper: PipelineHelper,
     chunk_size: int,
     max_image_size: int,
-    benchmarker: Optional[Benchmarker],
     start_time: float,
 ):
     waiting_time = time.time() - start_time  # bench
@@ -88,7 +87,7 @@ def _handle_connection(
 
         # Extract UI info.
         helper.log_debug(addr, "Extracting UI info.")
-        if benchmarker is None:
+        if helper.benchmarker is None:
             helper.recognize_text(text_elems)
             helper.label_icons(icon_elems)
             results.extend(helper.wait_recognize_text())
@@ -104,12 +103,12 @@ def _handle_connection(
             icon_time = time.time() - icon_start  # bench
 
         processing_time = time.time() - detection_start  # bench
-        if benchmarker is None:
+        if helper.benchmarker is None:
             results_json = _ui_to_json(screenshot_img, results).encode("utf-8")
         else:
             entry = [waiting_time, detection_time, text_time, icon_time, processing_time]  # type: ignore
-            benchmarker.add(entry)
-            metrics = {"keys": benchmarker.metrics, "values": entry}
+            helper.benchmarker.add(entry)
+            metrics = {"keys": helper.benchmarker.metrics, "values": entry}
             results_json = _ui_to_json(screenshot_img, results, metrics=metrics).encode(
                 "utf-8"
             )
@@ -216,7 +215,9 @@ class PipelineServer:
         self.socket.listen(1)
 
         with tmp.Manager() as sync_manager:
-            manager = PipelineManager(self.pipeline, sync_manager, self.logger)
+            manager = PipelineManager(
+                self.pipeline, sync_manager, self.logger, self.benchmarker
+            )
             manager.start()
 
             if warmup_image is not None:
@@ -237,7 +238,6 @@ class PipelineServer:
                             manager.get_helper(),
                             self.chunk_size,
                             self.max_image_size,
-                            self.benchmarker,
                             time.time(),
                         ),
                     )
