@@ -9,8 +9,8 @@ from multiprocessing.managers import SyncManager
 from torch import Tensor
 
 import src.benchmark as bench
-from src.multiprocessing.benchmark import BenchmarkListener, Benchmarker
-from src.multiprocessing.constructor import PipelineConstructor
+from src.multiprocessing.benchmark import BenchmarkListener
+from src.constructor import PipelineConstructor
 from src.multiprocessing.helper import PipelineHelper, PipelineManagerHelper
 from src.multiprocessing.logging import LogListener
 from src.multiprocessing.worker import Worker
@@ -77,27 +77,27 @@ class PipelineManager:
 
         self.detector_worker = Worker(
             detect,
-            self.pipeline.detector,
+            self.pipeline.modules[PipelineConstructor.DETECTOR],
             self._helper.detector_ch,
             self._helper.detector_pool,
             logger,
-            "detector",
+            PipelineConstructor.DETECTOR,
         )
         self.text_recognizer_worker = Worker(
             recognize_texts,
-            self.pipeline.text_recognizer,
+            self.pipeline.modules[PipelineConstructor.TEXT_RECOGNIZER],
             self._helper.text_recognizer_ch,
             self._helper.text_recognizer_pool,
             logger,
-            "text_recognizer",
+            PipelineConstructor.TEXT_RECOGNIZER,
         )
         self.icon_labeller_worker = Worker(
             label_icons,
-            self.pipeline.icon_labeller,
+            self.pipeline.modules[PipelineConstructor.ICON_LABELLER],
             self._helper.icon_labeller_ch,
             self._helper.icon_labeller_pool,
             logger,
-            "icon_labeller",
+            PipelineConstructor.ICON_LABELLER,
         )
 
         self.log_listener.start()

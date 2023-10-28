@@ -9,7 +9,7 @@ from threading import Condition
 from torch import Tensor
 
 from src.multiprocessing.benchmark import BenchmarkListener, Benchmarker
-from src.multiprocessing.constructor import PipelineConstructor
+from src.constructor import PipelineConstructor
 from src.multiprocessing.logging import LogListener, Logger
 
 

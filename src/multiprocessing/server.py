@@ -17,7 +17,7 @@ from multiprocessing.managers import SyncManager
 from multiprocessing.pool import Pool
 
 from src.benchmark import Benchmarker
-from src.multiprocessing.constructor import PipelineConstructor
+from src.constructor import PipelineConstructor
 from src.multiprocessing.manager import PipelineHelper, PipelineManager
 from src.utils import readall
 

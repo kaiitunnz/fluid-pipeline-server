@@ -11,10 +11,10 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 from fluid_ai.base import UiElement
-from fluid_ai.pipeline import UiDetectionPipeline
 from PIL import Image, ImageFile
 
 from src.benchmark import Benchmarker
+from src.constructor import PipelineConstructor
 from src.threading.helper import PipelineHelper
 from src.threading.manager import PipelineManager
 from src.utils import readall
@@ -64,7 +64,7 @@ def _handle_connection(
         # Detect UI elements.
         helper.log_debug(addr, "Detecting UI elements.")
         detection_start = time.time()  # bench
-        helper.detect(screenshot_img)
+        helper.send(PipelineConstructor.DETECTOR, screenshot_img)
         detected = helper.wait_result()
         detection_time = time.time() - detection_start  # bench
         helper.log_debug(addr, f"Found {len(detected)} UI elements.")
@@ -84,17 +84,17 @@ def _handle_connection(
         # Extract UI info.
         helper.log_debug(addr, "Extracting UI info.")
         if helper.benchmarker is None:
-            helper.recognize_text(text_elems)
-            helper.label_icons(icon_elems)
+            helper.send(PipelineConstructor.TEXT_RECOGNIZER, text_elems)
+            helper.send(PipelineConstructor.ICON_LABELLER, icon_elems)
             results.extend(helper.wait_result())
             results.extend(helper.wait_result())
         else:
             text_start = time.time()  # bench
-            helper.recognize_text(text_elems)
+            helper.send(PipelineConstructor.TEXT_RECOGNIZER, text_elems)
             results.extend(helper.wait_result())
             text_time = time.time() - text_start  # bench
             icon_start = time.time()  # bench
-            helper.label_icons(icon_elems)
+            helper.send(PipelineConstructor.ICON_LABELLER, icon_elems)
             results.extend(helper.wait_result())
             icon_time = time.time() - icon_start  # bench
 
@@ -149,7 +149,7 @@ def _elem_to_dict(elem: UiElement) -> Dict[str, Any]:
 class PipelineServer:
     hostname: str
     port: str
-    pipeline: UiDetectionPipeline
+    pipeline: PipelineConstructor
     chunk_size: int
     max_image_size: int
     num_workers: int
@@ -163,10 +163,11 @@ class PipelineServer:
         *,
         hostname: str,
         port: str,
-        pipeline: UiDetectionPipeline,
+        pipeline: PipelineConstructor,
         chunk_size: int = -1,
         max_image_size: int = -1,
         num_workers: int = 4,
+        num_instances: int = 1,
         verbose: bool = True,
         benchmark: bool = False,
         benchmark_file: Optional[str] = None,
@@ -177,6 +178,7 @@ class PipelineServer:
         self.chunk_size = chunk_size
         self.max_image_size = max_image_size
         self.num_workers = num_workers
+        self.num_instances = num_instances
         self.verbose = verbose
         self.logger = PipelineServer._init_logger(verbose)
 
@@ -199,18 +201,19 @@ class PipelineServer:
     def start(self, warmup_image: Optional[str] = None):
         self.logger.info("Starting the pipeline server...")
 
-        if warmup_image is not None:
-            self.warmup(warmup_image)
-
         self.socket = sock.socket(sock.AF_INET, sock.SOCK_STREAM)
         self.socket.bind((self.hostname, self.port))
         self.socket.listen(1)
 
-        manager = PipelineManager(self.pipeline, self.logger, self.benchmarker)
+        manager = PipelineManager(
+            self.pipeline, self.logger, self.benchmarker, self.num_instances
+        )
         manager.start()
 
         with ThreadPool(processes=self.num_workers) as pool:
             self._register_signal_handlers(pool, manager)
+            if warmup_image is not None:
+                self._warmup(manager.helper.get_helper(), warmup_image)
             self.logger.info(
                 f'Pipeline server started serving at "{self.hostname}:{self.port} (PID={os.getpid()})".'
             )
@@ -228,10 +231,29 @@ class PipelineServer:
                     ),
                 )
 
-    def warmup(self, sample_file: str):
+    def _warmup(self, helper: PipelineHelper, warmup_image: str):
         self.logger.info("Warming up the pipeline...")
-        sample = np.asarray(Image.open(sample_file))
-        self.pipeline.detect([sample])
+        img = np.asarray(Image.open(warmup_image))
+
+        for i in range(self.num_instances):
+            # Detect UI elements.
+            helper.sendi("detector", i, img)
+            detected = helper.wait_result()
+
+            # Partition the result.
+            text_elems = []
+            icon_elems = []
+            for e in detected:
+                if e.name in helper.textual_elements:
+                    text_elems.append(e)
+                elif e.name in helper.icon_elements:
+                    icon_elems.append(e)
+
+            # Extract UI info.
+            helper.sendi(PipelineConstructor.TEXT_RECOGNIZER, i, text_elems)
+            helper.sendi(PipelineConstructor.ICON_LABELLER, i, icon_elems)
+            helper.wait_result()
+            helper.wait_result()
 
     def _register_signal_handlers(self, pool: Pool, manager: PipelineManager):
         term_signals = (signal.SIGTERM, signal.SIGINT, signal.SIGQUIT)

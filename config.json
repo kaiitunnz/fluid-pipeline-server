@@ -5,6 +5,7 @@
     "chunk_size": 1024,
     "max_image_size": 20971520,
     "num_workers": 4,
+    "num_instances": 2,
     "sample_file": "/media/test/noppanat/pipeline_server/res/sample.jpg"
   },
   "ui_detector": {

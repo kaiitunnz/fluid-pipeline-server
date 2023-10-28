@@ -18,7 +18,7 @@ from fluid_ai.ui.detection import YoloUiDetector
 
 from src.threading.server import PipelineServer as ThreadingServer
 from src.sequential.server import PipelineServer as SequentialServer
-from src.multiprocessing.constructor import ModuleConstructor, PipelineConstructor
+from src.constructor import ModuleConstructor, PipelineConstructor
 from src.multiprocessing.server import PipelineServer as MultiprocessingServer
 
 
@@ -109,7 +109,7 @@ def main(args: Namespace):
             benchmark_file=args.benchmark,
         )
     elif args.mode == "threading":
-        pipeline = pipeline_from_config(config)
+        pipeline = constructor_from_config(config)
         pipeline_server = ThreadingServer(
             **config["server"],
             pipeline=pipeline,
