@@ -16,10 +16,11 @@ from fluid_ai.ocr import DummyOCR
 from fluid_ai.pipeline import UiDetectionPipeline
 from fluid_ai.ui.detection import YoloUiDetector
 
-from src.threading.server import PipelineServer as ThreadingServer
-from src.sequential.server import PipelineServer as SequentialServer
 from src.constructor import ModuleConstructor, PipelineConstructor
+from src.hybrid.server import PipelineServer as HybridServer
 from src.multiprocessing.server import PipelineServer as MultiprocessingServer
+from src.sequential.server import PipelineServer as SequentialServer
+from src.threading.server import PipelineServer as ThreadingServer
 
 
 def parse_args() -> Namespace:
@@ -40,7 +41,7 @@ def parse_args() -> Namespace:
         "-m",
         "--mode",
         action="store",
-        choices=["sequential", "threading", "multiprocessing"],
+        choices=["sequential", "threading", "multiprocessing", "hybrid"],
         default="threading",
         help="Pipeline server mode",
     )
@@ -120,6 +121,15 @@ def main(args: Namespace):
     elif args.mode == "multiprocessing":
         pipeline = constructor_from_config(config)
         pipeline_server = MultiprocessingServer(
+            **config["server"],
+            pipeline=pipeline,
+            verbose=args.verbose,
+            benchmark=args.benchmark is not None,
+            benchmark_file=args.benchmark,
+        )
+    elif args.mode == "hybrid":
+        pipeline = constructor_from_config(config)
+        pipeline_server = HybridServer(
             **config["server"],
             pipeline=pipeline,
             verbose=args.verbose,

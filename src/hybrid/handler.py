@@ -1,26 +1,26 @@
 import json
-import logging
-import os
+import multiprocessing as mp
+import numpy as np
 import signal
 import socket as sock
 import sys
 import time
+from PIL import Image
 from io import BytesIO
-from multiprocessing.pool import Pool, ThreadPool
+from multiprocessing.pool import ThreadPool
+from queue import Queue
 from typing import Any, Dict, List, Optional
 
-import numpy as np
 from fluid_ai.base import UiElement
-from PIL import Image, ImageFile
 
-from src.benchmark import Benchmarker
 from src.constructor import PipelineConstructor
-from src.threading.helper import PipelineHelper
-from src.threading.manager import PipelineManager
+from src.hybrid.benchmark import Benchmarker
+from src.hybrid.helper import PipelineHelper
+from src.hybrid.logging import Logger
+from src.hybrid.manager import PipelineManager
 from src.utils import readall
 
-ImageFile.LOAD_TRUNCATED_IMAGES = True
-DEFAULT_BENCHMARK_FILE = "benchmark.csv"
+
 SAVE_IMG_DIR = "res"
 SAVE_IMG = False
 
@@ -146,67 +146,64 @@ def _elem_to_dict(elem: UiElement) -> Dict[str, Any]:
     }
 
 
-class PipelineServer:
-    hostname: str
-    port: str
-    pipeline: PipelineConstructor
+class ConnectionHandler:
+    CLS: str = "connection_handler"
+    key: int
+    name: str
+    constructor: PipelineConstructor
+    num_workers: int
+    logger: Logger
+    benchmarker: Optional[Benchmarker]
+    job_queue: Queue
+    process: Optional[mp.Process]
+
     chunk_size: int
     max_image_size: int
-    num_workers: int
-    socket: Optional[sock.socket] = None
-    verbose: bool
-    logger: logging.Logger
-    benchmarker: Optional[Benchmarker]
+
+    _is_exit: bool = False
 
     def __init__(
         self,
-        *,
-        hostname: str,
-        port: str,
-        pipeline: PipelineConstructor,
-        chunk_size: int = -1,
-        max_image_size: int = -1,
-        num_workers: int = 4,
-        num_instances: int = 1,
-        verbose: bool = True,
-        benchmark: bool = False,
-        benchmark_file: Optional[str] = None,
+        key: int,
+        constructor: PipelineConstructor,
+        job_queue: Queue,
+        num_workers: int,
+        logger: Logger,
+        benchmarker: Optional[Benchmarker],
+        chunk_size: int,
+        max_image_size: int,
+        name: str = CLS,
     ):
-        self.hostname = hostname
-        self.port = port
-        self.pipeline = pipeline
+        self.key = key
+        self.constructor = constructor
+        self.job_queue = job_queue
+        self.num_workers = num_workers
+        self.logger = logger
+        self.benchmarker = benchmarker
+        self.name = name
         self.chunk_size = chunk_size
         self.max_image_size = max_image_size
-        self.num_workers = num_workers
-        self.num_instances = num_instances
-        self.verbose = verbose
-        self.logger = PipelineServer._init_logger(verbose)
 
-        benchmark_metrics = [
-            "Waiting time",
-            "UI detection time",
-            "Text recognition time",
-            "Icon labeling time",
-            "Processing time",
-        ]
-        self.benchmarker = (
-            Benchmarker(
-                benchmark_metrics,
-                benchmark_file or DEFAULT_BENCHMARK_FILE,
-            )
-            if benchmark
-            else None
-        )
+        self.process = None
 
     def start(self, warmup_image: Optional[str] = None):
-        self.logger.info("Starting the pipeline server...")
+        self._is_exit = False
+        self.process = mp.Process(
+            target=self._serve,
+            name=self.name,
+            args=(warmup_image,),
+            daemon=False,
+        )
+        self.process.start()
 
-        self.socket = sock.socket(sock.AF_INET, sock.SOCK_STREAM)
-        self.socket.bind((self.hostname, self.port))
-        self.socket.listen(1)
+    def _serve(self, warmup_image: Optional[str] = None):
+        self.logger.info(f"[{self.get_name()}] Started serving.")
 
         manager = PipelineManager(
-            self.pipeline, self.logger, self.benchmarker, self.num_instances
+            self.key,
+            self.constructor,
+            self.logger,
+            self.benchmarker,
         )
         manager.start()
 
@@ -214,71 +211,75 @@ class PipelineServer:
             self._register_signal_handlers(pool, manager)
             if warmup_image is not None:
                 self._warmup(manager.helper.get_helper(), warmup_image)
-            self.logger.info(
-                f'Pipeline server started serving at "{self.hostname}:{self.port} (PID={os.getpid()})".'
-            )
-            while True:
-                conn, addr = self.socket.accept()
-                self.logger.info(f'Got connection from "{addr[0]}:{addr[1]}"')
-                pool.apply_async(
-                    _handle_connection,
-                    args=(
-                        conn,
-                        manager.get_helper(),
-                        self.chunk_size,
-                        self.max_image_size,
-                        time.time(),
-                    ),
-                )
+            try:
+                while True:
+                    job = self.job_queue.get()
+                    if job is None:
+                        break
+                    if not isinstance(job, sock.socket):
+                        raise ValueError(
+                            f"Invalid job. Expected a socket connection. Got {type(job)} instead."
+                        )
+                    conn = job
+                    pool.apply_async(
+                        _handle_connection,
+                        args=(
+                            conn,
+                            manager.get_helper(),
+                            self.chunk_size,
+                            self.max_image_size,
+                            time.time(),
+                        ),
+                    )
+            except BrokenPipeError:
+                self.logger.info(f"[{self.name}] Job queue closed.")
 
     def _warmup(self, helper: PipelineHelper, warmup_image: str):
-        self.logger.info("Warming up the pipeline...")
+        self.logger.info(f"[{self.get_name()}] Warming up the pipeline...")
         img = np.asarray(Image.open(warmup_image))
 
-        for i in range(self.num_instances):
-            # Detect UI elements.
-            helper.sendi(PipelineConstructor.DETECTOR, i, img)
-            detected = helper.wait_result()
+        # Detect UI elements.
+        helper.send(PipelineConstructor.DETECTOR, img)
+        detected = helper.wait_result()
 
-            # Partition the result.
-            text_elems = []
-            icon_elems = []
-            for e in detected:
-                if e.name in helper.textual_elements:
-                    text_elems.append(e)
-                elif e.name in helper.icon_elements:
-                    icon_elems.append(e)
+        # Partition the result.
+        text_elems = []
+        icon_elems = []
+        for e in detected:
+            if e.name in helper.textual_elements:
+                text_elems.append(e)
+            elif e.name in helper.icon_elements:
+                icon_elems.append(e)
 
-            # Extract UI info.
-            helper.sendi(PipelineConstructor.TEXT_RECOGNIZER, i, text_elems)
-            helper.sendi(PipelineConstructor.ICON_LABELLER, i, icon_elems)
-            helper.wait_result()
-            helper.wait_result()
+        # Extract UI info.
+        helper.send(PipelineConstructor.TEXT_RECOGNIZER, text_elems)
+        helper.send(PipelineConstructor.ICON_LABELLER, icon_elems)
+        helper.wait_result()
+        helper.wait_result()
 
-    def _register_signal_handlers(self, pool: Pool, manager: PipelineManager):
+    def _register_signal_handlers(self, pool: ThreadPool, manager: PipelineManager):
         term_signals = (signal.SIGTERM, signal.SIGINT, signal.SIGQUIT)
 
         def _exit(signum: int, _):
-            self.logger.info(
-                f"Termination signal received: {signal.Signals(signum).name}"
-            )
+            if self._is_exit:
+                return
+            self._is_exit = True
             pool.close()
             pool.join()
-            manager.terminate(force=True)
-            self.logger.info("Server successfully exited.")
+            manager.terminate(True)
             sys.exit(0)
 
         for sig in term_signals:
             signal.signal(sig, _exit)
 
-    @classmethod
-    def _init_logger(cls, verbose: bool = True) -> logging.Logger:
-        fmt = "[%(asctime)s | %(name)s] [%(levelname)s] %(message)s"
-        datefmt = "%Y-%m-%d %H:%M:%S"
-        logging.basicConfig(format=fmt, datefmt=datefmt)
-        logger = logging.getLogger(cls.__name__)
-        if verbose:
-            logger.setLevel(logging.DEBUG)
+    def get_name(self) -> str:
+        return self.name + str(self.key)
+
+    def terminate(self, force: bool = False):
+        if self.process is None:
+            raise ValueError("The handler process has not started.")
+        if force:
+            self.process.terminate()
         else:
-            logger.setLevel(logging.INFO)
-        return logger
+            self.job_queue.put(None)
+        self.process.join()
