@@ -42,7 +42,7 @@ def parse_args() -> Namespace:
         "--mode",
         action="store",
         choices=["sequential", "threading", "multiprocessing", "hybrid"],
-        default="threading",
+        default="hybrid",
         help="Pipeline server mode",
     )
     return parser.parse_args()
