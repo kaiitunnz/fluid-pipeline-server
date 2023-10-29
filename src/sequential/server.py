@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 import signal
@@ -8,7 +7,7 @@ import time
 from io import BytesIO
 from multiprocessing.pool import Pool, ThreadPool
 from queue import SimpleQueue
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 import numpy as np
 from fluid_ai.base import UiElement
@@ -69,12 +68,12 @@ def _handle_connection(
         log_debug(logger, addr, f"Found {len(results)} UI elements.")
 
         if benchmarker is None:
-            results_json = _ui_to_json(screenshot_img, results).encode("utf-8")
+            results_json = ui_to_json(screenshot_img, results).encode("utf-8")
         else:
             entry = [waiting_time, processing_time]  # type: ignore
             benchmarker.add(entry)
             metrics = {"keys": benchmarker.metrics, "values": entry}
-            results_json = _ui_to_json(screenshot_img, results, metrics=metrics).encode(
+            results_json = ui_to_json(screenshot_img, results, metrics=metrics).encode(
                 "utf-8"
             )
 
@@ -93,27 +92,6 @@ def _handle_connection(
     finally:
         log_info(logger, addr, "Connection closed.")
         conn.close()
-
-
-def _ui_to_json(screenshot_img: np.ndarray, elems: List[UiElement], **kwargs) -> str:
-    h, w, *_ = screenshot_img.shape
-    data = {"img_shape": [w, h], "elements": [_elem_to_dict(e) for e in elems]}
-    data.update(kwargs)
-    return json.dumps(data)
-
-
-def _elem_to_dict(elem: UiElement) -> Dict[str, Any]:
-    (x0, y0), (x1, y1) = elem.bbox
-    return {
-        "class": elem.name,
-        "position": {
-            "x_min": x0,
-            "y_min": y0,
-            "x_max": x1,
-            "y_max": y1,
-        },
-        "info": elem.info,
-    }
 
 
 class PipelineServer:

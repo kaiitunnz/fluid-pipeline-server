@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 import signal
@@ -6,7 +5,7 @@ import socket as sock
 import sys
 import time
 from io import BytesIO
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 import numpy as np
 import torch
@@ -19,7 +18,7 @@ from multiprocessing.pool import Pool
 from src.benchmark import Benchmarker
 from src.constructor import PipelineConstructor
 from src.multiprocessing.manager import PipelineHelper, PipelineManager
-from src.utils import readall
+from src.utils import readall, ui_to_json
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 DEFAULT_BENCHMARK_FILE = "benchmark.csv"
@@ -104,14 +103,14 @@ def _handle_connection(
 
         processing_time = time.time() - detection_start  # bench
         if helper.benchmarker is None:
-            results_json = _ui_to_json(screenshot_img, results).encode("utf-8")
+            results_json = ui_to_json(screenshot_img.numpy(), results).encode("utf-8")
         else:
             entry = [waiting_time, detection_time, text_time, icon_time, processing_time]  # type: ignore
             helper.benchmarker.add(entry)
             metrics = {"keys": helper.benchmarker.metrics, "values": entry}
-            results_json = _ui_to_json(screenshot_img, results, metrics=metrics).encode(
-                "utf-8"
-            )
+            results_json = ui_to_json(
+                screenshot_img.numpy(), results, metrics=metrics
+            ).encode("utf-8")
 
         helper.log_debug(
             addr,
@@ -127,27 +126,6 @@ def _handle_connection(
     finally:
         helper.log_info(addr, "Connection closed.")
         conn.close()
-
-
-def _ui_to_json(screenshot_img: torch.Tensor, elems: List[UiElement], **kwargs) -> str:
-    h, w, *_ = screenshot_img.size()
-    data = {"img_shape": [w, h], "elements": [_elem_to_dict(e) for e in elems]}
-    data.update(kwargs)
-    return json.dumps(data)
-
-
-def _elem_to_dict(elem: UiElement) -> Dict[str, Any]:
-    (x0, y0), (x1, y1) = elem.bbox
-    return {
-        "class": elem.name,
-        "position": {
-            "x_min": x0,
-            "y_min": y0,
-            "x_max": x1,
-            "y_max": y1,
-        },
-        "info": elem.info,
-    }
 
 
 class PipelineServer:

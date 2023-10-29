@@ -1,4 +1,3 @@
-import json
 import multiprocessing as mp
 import numpy as np
 import signal
@@ -12,7 +11,7 @@ from multiprocessing.queues import SimpleQueue
 from multiprocessing.synchronize import Semaphore
 from queue import Queue
 from threading import Thread
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from fluid_ai.base import UiElement
 
@@ -21,32 +20,11 @@ from src.hybrid.benchmark import Benchmarker
 from src.hybrid.helper import PipelineHelper
 from src.hybrid.logging import Logger
 from src.hybrid.manager import PipelineManager
-from src.utils import readall
+from src.utils import readall, ui_to_json
 
 
 SAVE_IMG_DIR = "res"
 SAVE_IMG = False
-
-
-def _ui_to_json(screenshot_img: np.ndarray, elems: List[UiElement], **kwargs) -> str:
-    h, w, *_ = screenshot_img.shape
-    data = {"img_shape": [w, h], "elements": [_elem_to_dict(e) for e in elems]}
-    data.update(kwargs)
-    return json.dumps(data)
-
-
-def _elem_to_dict(elem: UiElement) -> Dict[str, Any]:
-    (x0, y0), (x1, y1) = elem.bbox
-    return {
-        "class": elem.name,
-        "position": {
-            "x_min": x0,
-            "y_min": y0,
-            "x_max": x1,
-            "y_max": y1,
-        },
-        "info": elem.info,
-    }
 
 
 class _HandlerHelper:
@@ -170,12 +148,12 @@ class _HandlerHelper:
 
             processing_time = time.time() - detection_start  # bench
             if self.helper.benchmarker is None:
-                results_json = _ui_to_json(screenshot_img, results).encode("utf-8")
+                results_json = ui_to_json(screenshot_img, results).encode("utf-8")
             else:
                 entry = [waiting_time, detection_time, text_time, icon_time, processing_time]  # type: ignore
                 self.helper.benchmarker.add(entry)
                 metrics = {"keys": self.helper.benchmarker.metrics, "values": entry}
-                results_json = _ui_to_json(
+                results_json = ui_to_json(
                     screenshot_img, results, metrics=metrics
                 ).encode("utf-8")
 

@@ -1,3 +1,4 @@
+import json
 import logging
 import socket as sock
 from typing import Any, Callable, Dict, List, Tuple
@@ -33,6 +34,27 @@ def readall(socket: sock.socket, num_bytes: int, chunk_size: int) -> bytes:
         buffer[curr : curr + len(data)] = data
         curr += len(data)
     return bytes(buffer)
+
+
+def ui_to_json(screenshot_img: np.ndarray, elems: List[UiElement], **kwargs) -> str:
+    h, w, *_ = screenshot_img.shape
+    data = {"img_shape": [w, h], "elements": [_elem_to_dict(e) for e in elems]}
+    data.update(kwargs)
+    return json.dumps(data)
+
+
+def _elem_to_dict(elem: UiElement) -> Dict[str, Any]:
+    (x0, y0), (x1, y1) = elem.bbox
+    return {
+        "class": elem.name,
+        "position": {
+            "x_min": x0,
+            "y_min": y0,
+            "x_max": x1,
+            "y_max": y1,
+        },
+        "info": elem.info,
+    }
 
 
 def _log(log_func: Callable[[str], None], addr: Tuple[str, int], msg: str):
