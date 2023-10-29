@@ -1,5 +1,5 @@
 import logging
-from queue import Queue
+from multiprocessing.queues import SimpleQueue
 from threading import Thread
 from typing import Any, List
 
@@ -7,10 +7,10 @@ import src.benchmark as bench
 
 
 class Benchmarker:
-    _channel: Queue
+    _channel: SimpleQueue
     metrics: List[str]
 
-    def __init__(self, channel: Queue, metrics: List[str]):
+    def __init__(self, channel: SimpleQueue, metrics: List[str]):
         self._channel = channel
         self.metrics = metrics
 
@@ -20,7 +20,7 @@ class Benchmarker:
 
 class BenchmarkListener:
     benchmarker: bench.Benchmarker
-    channel: Queue
+    channel: SimpleQueue
     logger: logging.Logger
     name: str
     _benchmarker: Benchmarker
@@ -29,7 +29,7 @@ class BenchmarkListener:
     def __init__(
         self,
         benchmarker: bench.Benchmarker,
-        channel: Queue,
+        channel: SimpleQueue,
         logger: logging.Logger,
         name: str = "benchmark_listener",
     ):
@@ -45,21 +45,16 @@ class BenchmarkListener:
 
     def _serve(self):
         self.logger.debug(f"[{self.name}] Started serving.")
-        try:
-            while True:
-                entry = self.channel.get()
-                if entry is None:
-                    break
-                self.benchmarker.add(entry)
-        except EOFError:
-            self.logger.info(f"[{self.name}] Channel closed.")
+        while True:
+            entry = self.channel.get()
+            if entry is None:
+                break
+            self.benchmarker.add(entry)
 
     def get_benchmarker(self):
         return self._benchmarker
 
     def terminate(self, _force: bool = False):
-        try:
-            self.channel.put(None)
-        except:
-            pass
+        self.channel.put(None)
         self._thread.join()
+        self.logger.debug(f"[{self.name}] Terminated.")

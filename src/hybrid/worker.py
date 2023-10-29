@@ -35,19 +35,17 @@ class Worker:
 
     def serve(self, module: Any):
         self.logger.debug(f"[{self.name}] Started serving.")
-        try:
-            while True:
-                msg = self.channel.get()
-                if msg is None:
-                    return
-                out_channel, args = msg
-                assert isinstance(out_channel, SimpleQueue)
-                out_channel.put(self.func(*args, module=module))
-        except EOFError:
-            self.logger.info(f"[{self.name}] Channel closed.")
+        while True:
+            msg = self.channel.get()
+            if msg is None:
+                return
+            out_channel, args = msg
+            assert isinstance(out_channel, SimpleQueue)
+            out_channel.put(self.func(*args, module=module))
 
     def terminate(self, _force: bool = False):
         if self._thread is None:
             raise ValueError("The worker thread has not been started.")
         self.channel.put(None)
         self._thread.join()
+        self.logger.debug(f"[{self.name}] Terminated.")

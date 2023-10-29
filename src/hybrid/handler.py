@@ -4,11 +4,13 @@ import numpy as np
 import signal
 import socket as sock
 import sys
+import threading
 import time
 from PIL import Image
 from io import BytesIO
 from multiprocessing.pool import ThreadPool
-from queue import Queue
+from multiprocessing.queues import SimpleQueue
+from multiprocessing.synchronize import Semaphore
 from typing import Any, Dict, List, Optional
 
 from fluid_ai.base import UiElement
@@ -148,25 +150,28 @@ def _elem_to_dict(elem: UiElement) -> Dict[str, Any]:
 
 class ConnectionHandler:
     CLS: str = "connection_handler"
+
     key: int
     name: str
     constructor: PipelineConstructor
     num_workers: int
     logger: Logger
     benchmarker: Optional[Benchmarker]
-    job_queue: Queue
-    process: Optional[mp.Process]
+    job_queue: SimpleQueue
 
     chunk_size: int
     max_image_size: int
 
-    _is_exit: bool = False
+    _process: Optional[mp.Process]
+    _ready_sema: Semaphore = mp.Semaphore(0)
+    # To handle terminating signals only once
+    _exit_sema: threading.Semaphore = threading.Semaphore(1)
 
     def __init__(
         self,
         key: int,
         constructor: PipelineConstructor,
-        job_queue: Queue,
+        job_queue: SimpleQueue,
         num_workers: int,
         logger: Logger,
         benchmarker: Optional[Benchmarker],
@@ -184,20 +189,19 @@ class ConnectionHandler:
         self.chunk_size = chunk_size
         self.max_image_size = max_image_size
 
-        self.process = None
+        self._process = None
 
     def start(self, warmup_image: Optional[str] = None):
-        self._is_exit = False
-        self.process = mp.Process(
+        self._process = mp.Process(
             target=self._serve,
             name=self.name,
             args=(warmup_image,),
             daemon=False,
         )
-        self.process.start()
+        self._process.start()
 
     def _serve(self, warmup_image: Optional[str] = None):
-        self.logger.info(f"[{self.get_name()}] Started serving.")
+        self.logger.debug(f"[{self.get_name()}] Started serving.")
 
         manager = PipelineManager(
             self.key,
@@ -211,31 +215,35 @@ class ConnectionHandler:
             self._register_signal_handlers(pool, manager)
             if warmup_image is not None:
                 self._warmup(manager.helper.get_helper(), warmup_image)
-            try:
-                while True:
-                    job = self.job_queue.get()
-                    if job is None:
-                        break
-                    if not isinstance(job, sock.socket):
-                        raise ValueError(
-                            f"Invalid job. Expected a socket connection. Got {type(job)} instead."
-                        )
-                    conn = job
-                    pool.apply_async(
-                        _handle_connection,
-                        args=(
-                            conn,
-                            manager.get_helper(),
-                            self.chunk_size,
-                            self.max_image_size,
-                            time.time(),
-                        ),
+            self._ready()
+            while True:
+                job = self.job_queue.get()
+                if job is None:
+                    break
+                if not isinstance(job, sock.socket):
+                    raise ValueError(
+                        f"Invalid job. Expected a socket connection. Got {type(job)} instead."
                     )
-            except BrokenPipeError:
-                self.logger.info(f"[{self.name}] Job queue closed.")
+                conn = job
+                pool.apply_async(
+                    _handle_connection,
+                    args=(
+                        conn,
+                        manager.get_helper(),
+                        self.chunk_size,
+                        self.max_image_size,
+                        time.time(),
+                    ),
+                )
+
+    def _ready(self):
+        self._ready_sema.release()
+
+    def wait_ready(self):
+        self._ready_sema.acquire()
 
     def _warmup(self, helper: PipelineHelper, warmup_image: str):
-        self.logger.info(f"[{self.get_name()}] Warming up the pipeline...")
+        self.logger.debug(f"[{self.get_name()}] Warming up the pipeline...")
         img = np.asarray(Image.open(warmup_image))
 
         # Detect UI elements.
@@ -257,13 +265,17 @@ class ConnectionHandler:
         helper.wait_result()
         helper.wait_result()
 
+        self.logger.debug(f"[{self.get_name()}] Warm-up complete.")
+
     def _register_signal_handlers(self, pool: ThreadPool, manager: PipelineManager):
         term_signals = (signal.SIGTERM, signal.SIGINT, signal.SIGQUIT)
 
         def _exit(signum: int, _):
-            if self._is_exit:
+            if not self._exit_sema.acquire(blocking=False):
                 return
-            self._is_exit = True
+            self.logger.debug(
+                f"[{self.get_name()}] Termination signal received: {signal.Signals(signum).name}"
+            )
             pool.close()
             pool.join()
             manager.terminate(True)
@@ -276,10 +288,11 @@ class ConnectionHandler:
         return self.name + str(self.key)
 
     def terminate(self, force: bool = False):
-        if self.process is None:
+        if self._process is None:
             raise ValueError("The handler process has not started.")
         if force:
-            self.process.terminate()
+            self._process.terminate()
         else:
             self.job_queue.put(None)
-        self.process.join()
+        self._process.join()
+        self.logger.debug(f"[{self.get_name()}] Terminated.")

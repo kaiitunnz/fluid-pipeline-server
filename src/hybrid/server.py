@@ -4,7 +4,7 @@ import os
 import signal
 import socket as sock
 import sys
-from multiprocessing.managers import SyncManager
+from threading import Semaphore
 from typing import List, Optional
 
 from PIL import ImageFile
@@ -34,7 +34,7 @@ class PipelineServer:
     benchmarker: Optional[Benchmarker]
 
     handlers: List[ConnectionHandler]
-    _is_exit: bool = False
+    _exit_sema: Semaphore = Semaphore(1)  # To handle terminating signals only once
 
     def __init__(
         self,
@@ -79,15 +79,15 @@ class PipelineServer:
 
     def start(self, warmup_image: Optional[str] = None):
         self.logger.info("Starting the pipeline server...")
-        self._is_exit = False
 
-        manager = mp.Manager()
-        job_queue = manager.Queue()
-        log_listener = LogListener(self.logger, manager.Queue())
+        # Use SimpleQueue instead of Queue, which has its own finalizer
+        # that closes itself before all log events are acknowledged.
+        job_queue = mp.SimpleQueue()
+        log_listener = LogListener(self.logger, mp.SimpleQueue())
         benchmark_listener = (
             None
             if self.benchmarker is None
-            else BenchmarkListener(self.benchmarker, manager.Queue(), self.logger)
+            else BenchmarkListener(self.benchmarker, mp.SimpleQueue(), self.logger)
         )
 
         for i in range(self.num_instances):
@@ -106,13 +106,15 @@ class PipelineServer:
                 )
             )
 
-        self._register_signal_handlers(manager, log_listener, benchmark_listener)
+        self._register_signal_handlers(log_listener, benchmark_listener)
 
         log_listener.start()
         if benchmark_listener is not None:
             benchmark_listener.start()
         for handler in self.handlers:
             handler.start(warmup_image)
+        for handler in self.handlers:
+            handler.wait_ready()
 
         self.socket = sock.socket(sock.AF_INET, sock.SOCK_STREAM)
         self.socket.bind((self.hostname, self.port))
@@ -127,28 +129,23 @@ class PipelineServer:
 
     def _register_signal_handlers(
         self,
-        manager: SyncManager,
         log_listener: LogListener,
         benchmark_listener: Optional[BenchmarkListener],
     ):
         term_signals = (signal.SIGTERM, signal.SIGINT, signal.SIGQUIT)
 
         def _exit(signum: int, _):
-            if self._is_exit:
+            if not self._exit_sema.acquire(blocking=False):
                 return
             self.logger.info(
                 f"Termination signal received: {signal.Signals(signum).name}"
             )
+            self.logger.info("Terminating the worker processes...")
             for handler in self.handlers:
                 handler.terminate(force=True)
-                self.logger.info(f"[{handler.get_name()}] Terminated.")
             log_listener.terminate(True)
-            self.logger.info(f"[{log_listener.name}] Terminated.")
             if benchmark_listener is not None:
                 benchmark_listener.terminate(True)
-                self.logger.info(f"[{benchmark_listener.name}] Terminated.")
-            manager.shutdown()
-            manager.join()
             self.logger.info("Server successfully exited.")
             sys.exit(0)
 
