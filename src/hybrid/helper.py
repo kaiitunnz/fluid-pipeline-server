@@ -108,6 +108,11 @@ class PipelineHelper:
     def save_image(self, img: Image.Image, save_dir: str, prefix: str = "img"):
         img.save(os.path.join(save_dir, f"{prefix}{self.key}.jpg"))
 
+    def save_image_i(
+        self, img: Image.Image, i: int, save_dir: str, prefix: str = "img"
+    ):
+        img.save(os.path.join(save_dir, f"{prefix}{i}.jpg"))
+
     @staticmethod
     def _log(log_func: Callable[[str], None], addr: Tuple[str, int], msg: str):
         ip, port = addr

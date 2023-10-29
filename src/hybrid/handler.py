@@ -8,9 +8,10 @@ import threading
 import time
 from PIL import Image
 from io import BytesIO
-from multiprocessing.pool import ThreadPool
 from multiprocessing.queues import SimpleQueue
 from multiprocessing.synchronize import Semaphore
+from queue import Queue
+from threading import Thread
 from typing import Any, Dict, List, Optional
 
 from fluid_ai.base import UiElement
@@ -25,106 +26,6 @@ from src.utils import readall
 
 SAVE_IMG_DIR = "res"
 SAVE_IMG = False
-
-
-def _handle_connection(
-    conn: sock.socket,
-    helper: PipelineHelper,
-    chunk_size: int,
-    max_image_size: int,
-    start_time: float,
-):
-    waiting_time = time.time() - start_time  # bench
-
-    try:
-        addr = conn.getpeername()
-    except Exception as e:
-        helper.logger.error(
-            f"The following exception occurred while attempting to connect: {e}"
-        )
-        return
-
-    try:
-        packet_size = int.from_bytes(readall(conn, 4, chunk_size), "big", signed=False)
-        helper.log_debug(addr, f"Receiving a packet of size {packet_size} bytes.")
-        if packet_size > max_image_size:
-            helper.log_error(
-                addr, f"The packet size exceeds the maximum allowable size."
-            )
-            conn.close()
-            return
-
-        data = readall(conn, packet_size, chunk_size)
-        helper.log_debug(addr, f"Received a packet of size {len(data)} bytes.")
-        packet = BytesIO(data)
-        img = Image.open(packet)
-        if SAVE_IMG:
-            helper.save_image(img, SAVE_IMG_DIR)
-        screenshot_img = np.asarray(img)
-        helper.log_debug(addr, f"Received an image of shape {screenshot_img.shape}.")
-
-        # Detect UI elements.
-        helper.log_debug(addr, "Detecting UI elements.")
-        detection_start = time.time()  # bench
-        helper.send(PipelineConstructor.DETECTOR, screenshot_img)
-        detected = helper.wait_result()
-        detection_time = time.time() - detection_start  # bench
-        helper.log_debug(addr, f"Found {len(detected)} UI elements.")
-
-        # Partition the result.
-        text_elems = []
-        icon_elems = []
-        results: List[UiElement] = []
-        for e in detected:
-            if e.name in helper.textual_elements:
-                text_elems.append(e)
-            elif e.name in helper.icon_elements:
-                icon_elems.append(e)
-            else:
-                results.append(e)
-
-        # Extract UI info.
-        helper.log_debug(addr, "Extracting UI info.")
-        if helper.benchmarker is None:
-            helper.send(PipelineConstructor.TEXT_RECOGNIZER, text_elems)
-            helper.send(PipelineConstructor.ICON_LABELLER, icon_elems)
-            results.extend(helper.wait_result())
-            results.extend(helper.wait_result())
-        else:
-            text_start = time.time()  # bench
-            helper.send(PipelineConstructor.TEXT_RECOGNIZER, text_elems)
-            results.extend(helper.wait_result())
-            text_time = time.time() - text_start  # bench
-            icon_start = time.time()  # bench
-            helper.send(PipelineConstructor.ICON_LABELLER, icon_elems)
-            results.extend(helper.wait_result())
-            icon_time = time.time() - icon_start  # bench
-
-        processing_time = time.time() - detection_start  # bench
-        if helper.benchmarker is None:
-            results_json = _ui_to_json(screenshot_img, results).encode("utf-8")
-        else:
-            entry = [waiting_time, detection_time, text_time, icon_time, processing_time]  # type: ignore
-            helper.benchmarker.add(entry)
-            metrics = {"keys": helper.benchmarker.metrics, "values": entry}
-            results_json = _ui_to_json(screenshot_img, results, metrics=metrics).encode(
-                "utf-8"
-            )
-
-        helper.log_debug(
-            addr,
-            f"Sending back the response of size {len(results_json)} bytes.",
-        )
-
-        conn.sendall(len(results_json).to_bytes(4, "big", signed=False))
-        helper.log_debug(addr, f"Sent response size: {len(results_json)}")
-        conn.sendall(results_json)
-        helper.log_info(addr, "Response sent.")
-    except Exception as e:
-        helper.log_error(addr, f"The following exception occurred: {e}")
-    finally:
-        helper.log_info(addr, "Connection closed.")
-        conn.close()
 
 
 def _ui_to_json(screenshot_img: np.ndarray, elems: List[UiElement], **kwargs) -> str:
@@ -148,6 +49,159 @@ def _elem_to_dict(elem: UiElement) -> Dict[str, Any]:
     }
 
 
+class _HandlerHelper:
+    helper: PipelineHelper
+    chunk_size: int
+    max_image_size: int
+    job_queue: Queue
+    logger: Logger
+
+    _workers: List[Thread]
+
+    def __init__(
+        self,
+        helper: PipelineHelper,
+        chunk_size: int,
+        max_image_size: int,
+        num_workers: int,
+        logger: Logger,
+        name: str,
+    ):
+        self.helper = helper
+        self.chunk_size = chunk_size
+        self.max_image_size = max_image_size
+        self.job_queue = Queue(num_workers)
+        self.logger = logger
+        self.name = name
+
+        self._workers = [
+            Thread(target=self._serve, args=(self.job_queue,), daemon=False)
+            for _ in range(num_workers)
+        ]
+
+    def start(self):
+        for worker in self._workers:
+            worker.start()
+
+    def _serve(self, job_queue: Queue):
+        while True:
+            job = job_queue.get()
+            if job is None:
+                break
+            self._handle_connection(*job)
+
+    def _handle_connection(
+        self,
+        job_no: int,
+        start_time: float,
+        conn: sock.socket,
+    ):
+        waiting_time = time.time() - start_time  # bench
+
+        try:
+            addr = conn.getpeername()
+        except Exception as e:
+            self.helper.logger.error(
+                f"The following exception occurred while attempting to connect: {e}"
+            )
+            return
+
+        try:
+            packet_size = int.from_bytes(
+                readall(conn, 4, self.chunk_size), "big", signed=False
+            )
+            self.helper.log_debug(
+                addr, f"Receiving a packet of size {packet_size} bytes."
+            )
+            if packet_size > self.max_image_size:
+                self.helper.log_error(
+                    addr, f"The packet size exceeds the maximum allowable size."
+                )
+                conn.close()
+                return
+
+            data = readall(conn, packet_size, self.chunk_size)
+            self.helper.log_debug(addr, f"Received a packet of size {len(data)} bytes.")
+            packet = BytesIO(data)
+            img = Image.open(packet)
+            if SAVE_IMG:
+                self.helper.save_image_i(img, job_no, SAVE_IMG_DIR)
+            screenshot_img = np.asarray(img)
+            self.helper.log_debug(
+                addr, f"Received an image of shape {screenshot_img.shape}."
+            )
+
+            # Detect UI elements.
+            self.helper.log_debug(addr, "Detecting UI elements.")
+            detection_start = time.time()  # bench
+            self.helper.send(PipelineConstructor.DETECTOR, screenshot_img)
+            detected = self.helper.wait_result()
+            detection_time = time.time() - detection_start  # bench
+            self.helper.log_debug(addr, f"Found {len(detected)} UI elements.")
+
+            # Partition the result.
+            text_elems = []
+            icon_elems = []
+            results: List[UiElement] = []
+            for e in detected:
+                if e.name in self.helper.textual_elements:
+                    text_elems.append(e)
+                elif e.name in self.helper.icon_elements:
+                    icon_elems.append(e)
+                else:
+                    results.append(e)
+
+            # Extract UI info.
+            self.helper.log_debug(addr, "Extracting UI info.")
+            if self.helper.benchmarker is None:
+                self.helper.send(PipelineConstructor.TEXT_RECOGNIZER, text_elems)
+                self.helper.send(PipelineConstructor.ICON_LABELLER, icon_elems)
+                results.extend(self.helper.wait_result())
+                results.extend(self.helper.wait_result())
+            else:
+                text_start = time.time()  # bench
+                self.helper.send(PipelineConstructor.TEXT_RECOGNIZER, text_elems)
+                results.extend(self.helper.wait_result())
+                text_time = time.time() - text_start  # bench
+                icon_start = time.time()  # bench
+                self.helper.send(PipelineConstructor.ICON_LABELLER, icon_elems)
+                results.extend(self.helper.wait_result())
+                icon_time = time.time() - icon_start  # bench
+
+            processing_time = time.time() - detection_start  # bench
+            if self.helper.benchmarker is None:
+                results_json = _ui_to_json(screenshot_img, results).encode("utf-8")
+            else:
+                entry = [waiting_time, detection_time, text_time, icon_time, processing_time]  # type: ignore
+                self.helper.benchmarker.add(entry)
+                metrics = {"keys": self.helper.benchmarker.metrics, "values": entry}
+                results_json = _ui_to_json(
+                    screenshot_img, results, metrics=metrics
+                ).encode("utf-8")
+
+            self.helper.log_debug(
+                addr,
+                f"Sending back the response of size {len(results_json)} bytes.",
+            )
+
+            conn.sendall(len(results_json).to_bytes(4, "big", signed=False))
+            self.helper.log_debug(addr, f"Sent response size: {len(results_json)}")
+            conn.sendall(results_json)
+            self.helper.log_info(addr, "Response sent.")
+        except Exception as e:
+            self.helper.log_error(addr, f"The following exception occurred: {e}")
+        finally:
+            self.helper.log_info(addr, "Connection closed.")
+            conn.close()
+
+    def terminate(self, _force: bool = False):
+        for _ in range(len(self._workers)):
+            self.job_queue.put(None)
+        for i, worker in enumerate(self._workers):
+            worker.join()
+            self.logger.debug(f"[{self.name}] Worker{i} terminated.")
+
+
 class ConnectionHandler:
     CLS: str = "connection_handler"
 
@@ -157,11 +211,11 @@ class ConnectionHandler:
     num_workers: int
     logger: Logger
     benchmarker: Optional[Benchmarker]
-    job_queue: SimpleQueue
 
     chunk_size: int
     max_image_size: int
 
+    _job_queue: SimpleQueue
     _process: Optional[mp.Process]
     _ready_sema: Semaphore = mp.Semaphore(0)
     # To handle terminating signals only once
@@ -181,7 +235,6 @@ class ConnectionHandler:
     ):
         self.key = key
         self.constructor = constructor
-        self.job_queue = job_queue
         self.num_workers = num_workers
         self.logger = logger
         self.benchmarker = benchmarker
@@ -189,6 +242,7 @@ class ConnectionHandler:
         self.chunk_size = chunk_size
         self.max_image_size = max_image_size
 
+        self._job_queue = job_queue
         self._process = None
 
     def start(self, warmup_image: Optional[str] = None):
@@ -209,38 +263,43 @@ class ConnectionHandler:
             self.logger,
             self.benchmarker,
         )
-        manager.start()
+        handler_helper = _HandlerHelper(
+            manager.get_helper(),
+            self.chunk_size,
+            self.max_image_size,
+            self.num_workers,
+            self.logger,
+            self.get_name(),
+        )
 
-        with ThreadPool(processes=self.num_workers) as pool:
-            self._register_signal_handlers(pool, manager)
-            if warmup_image is not None:
-                self._warmup(manager.helper.get_helper(), warmup_image)
-            self._ready()
-            while True:
-                job = self.job_queue.get()
-                if job is None:
-                    break
-                if not isinstance(job, sock.socket):
-                    raise ValueError(
-                        f"Invalid job. Expected a socket connection. Got {type(job)} instead."
-                    )
-                conn = job
-                pool.apply_async(
-                    _handle_connection,
-                    args=(
-                        conn,
-                        manager.get_helper(),
-                        self.chunk_size,
-                        self.max_image_size,
-                        time.time(),
-                    ),
-                )
+        manager.start()
+        handler_helper.start()
+
+        self._register_signal_handlers(handler_helper, manager)
+        if warmup_image is not None:
+            self._warmup(manager.helper.get_helper(), warmup_image)
+        self._ready()
+
+        while True:
+            job = self._job_queue.get()
+            if job is None:
+                break
+            handler_helper.job_queue.put(job, block=True)
 
     def _ready(self):
         self._ready_sema.release()
 
     def wait_ready(self):
         self._ready_sema.acquire()
+
+    @staticmethod
+    def send(
+        job_queue: SimpleQueue,
+        job_no: int,
+        start_time: float,
+        conn: sock.socket,
+    ):
+        job_queue.put((job_no, start_time, conn))
 
     def _warmup(self, helper: PipelineHelper, warmup_image: str):
         self.logger.debug(f"[{self.get_name()}] Warming up the pipeline...")
@@ -267,7 +326,9 @@ class ConnectionHandler:
 
         self.logger.debug(f"[{self.get_name()}] Warm-up complete.")
 
-    def _register_signal_handlers(self, pool: ThreadPool, manager: PipelineManager):
+    def _register_signal_handlers(
+        self, helper: _HandlerHelper, manager: PipelineManager
+    ):
         term_signals = (signal.SIGTERM, signal.SIGINT, signal.SIGQUIT)
 
         def _exit(signum: int, _):
@@ -276,8 +337,7 @@ class ConnectionHandler:
             self.logger.debug(
                 f"[{self.get_name()}] Termination signal received: {signal.Signals(signum).name}"
             )
-            pool.close()
-            pool.join()
+            helper.terminate(True)
             manager.terminate(True)
             sys.exit(0)
 
@@ -293,6 +353,6 @@ class ConnectionHandler:
         if force:
             self._process.terminate()
         else:
-            self.job_queue.put(None)
+            self._job_queue.put(None)
         self._process.join()
         self.logger.debug(f"[{self.get_name()}] Terminated.")

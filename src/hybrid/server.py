@@ -4,6 +4,7 @@ import os
 import signal
 import socket as sock
 import sys
+import time
 from threading import Semaphore
 from typing import List, Optional
 
@@ -122,10 +123,13 @@ class PipelineServer:
         self.logger.info(
             f'Pipeline server started serving at "{self.hostname}:{self.port} (PID={os.getpid()})".'
         )
+
+        job_no = 0
         while True:
             conn, addr = self.socket.accept()
             self.logger.info(f'Got connection from "{addr[0]}:{addr[1]}"')
-            job_queue.put(conn)
+            job_no += 1
+            ConnectionHandler.send(job_queue, job_no, time.time(), conn)
 
     def _register_signal_handlers(
         self,
@@ -140,13 +144,13 @@ class PipelineServer:
             self.logger.info(
                 f"Termination signal received: {signal.Signals(signum).name}"
             )
-            self.logger.info("Terminating the worker processes...")
+            self.logger.info("Terminating the pipeline server...")
             for handler in self.handlers:
                 handler.terminate(force=True)
             log_listener.terminate(True)
             if benchmark_listener is not None:
                 benchmark_listener.terminate(True)
-            self.logger.info("Server successfully exited.")
+            self.logger.info("Server exited successfully.")
             sys.exit(0)
 
         for sig in term_signals:
