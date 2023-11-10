@@ -8,7 +8,7 @@ import time
 from typing import List
 
 import numpy as np
-from PIL import Image
+from PIL import Image  # type: ignore
 
 sys.path.append(os.path.abspath(".."))
 
@@ -25,6 +25,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("-f", "--file", action="store", required=True)
     parser.add_argument("-t", "--test", action="store_true", default=False)
+    parser.add_argument("-j", "--json", action="store", default=None)
     parser.add_argument(
         "--config", action="store", default="config.json", help="Path to a config file"
     )
@@ -90,6 +91,10 @@ def main(args: argparse.Namespace):
     n = os.path.getsize(fname)
     s.sendall(n.to_bytes(4, "big", signed=False))
     with open(fname, "rb") as f:
+        s.sendfile(f)
+    n = os.path.getsize(args.json)
+    s.sendall(n.to_bytes(4, "big", signed=False))
+    with open(args.json, "rb") as f:
         s.sendfile(f)
 
     n = int.from_bytes(readall(s, 4, chunk_size), "big", signed=False)

@@ -12,9 +12,10 @@ from typing import List, Optional
 import numpy as np
 from fluid_ai.base import UiElement
 from fluid_ai.pipeline import UiDetectionPipeline
-from PIL import Image, ImageFile
+from PIL import Image, ImageFile  # type: ignore
 
 from src.benchmark import Benchmarker
+from src.pipeline import PipelineServerInterface
 from src.sequential.manager import PipelineManager
 from src.utils import *
 
@@ -41,7 +42,7 @@ def _handle_connection(
         )
         return
 
-    result_queue = SimpleQueue()
+    result_queue: SimpleQueue = SimpleQueue()
 
     try:
         packet_size = int.from_bytes(readall(conn, 4, chunk_size), "big", signed=False)
@@ -94,7 +95,7 @@ def _handle_connection(
         conn.close()
 
 
-class PipelineServer:
+class PipelineServer(PipelineServerInterface):
     hostname: str
     port: str
     pipeline: UiDetectionPipeline

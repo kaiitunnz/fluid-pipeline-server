@@ -15,14 +15,13 @@ from src.constructor import PipelineConstructor
 from src.hybrid.benchmark import BenchmarkListener
 from src.hybrid.handler import ConnectionHandler
 from src.hybrid.logging import LogListener
+from src.pipeline import PipelineServerInterface
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 DEFAULT_BENCHMARK_FILE = "benchmark.csv"
-SAVE_IMG_DIR = "res"
-SAVE_IMG = False
 
 
-class PipelineServer:
+class PipelineServer(PipelineServerInterface):
     hostname: str
     port: str
     pipeline: PipelineConstructor
@@ -65,6 +64,7 @@ class PipelineServer:
         benchmark_metrics = [
             "Waiting time",
             "UI detection time",
+            "Matching time",
             "Text recognition time",
             "Icon labeling time",
             "Processing time",
@@ -115,7 +115,9 @@ class PipelineServer:
         for handler in self.handlers:
             handler.start(warmup_image)
         for handler in self.handlers:
-            handler.wait_ready()
+            if not handler.wait_ready():
+                self.logger.error("Failed to start the pipeline server.")
+                os.kill(os.getpid(), signal.SIGTERM)
 
         self.socket = sock.socket(sock.AF_INET, sock.SOCK_STREAM)
         self.socket.bind((self.hostname, self.port))

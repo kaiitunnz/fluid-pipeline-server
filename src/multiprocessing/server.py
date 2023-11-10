@@ -10,7 +10,7 @@ from typing import List, Optional
 import numpy as np
 import torch
 import torch.multiprocessing as tmp
-from PIL import Image, ImageFile
+from PIL import Image, ImageFile  # type: ignore
 from fluid_ai.base import UiElement
 from multiprocessing.managers import SyncManager
 from multiprocessing.pool import Pool
@@ -18,6 +18,7 @@ from multiprocessing.pool import Pool
 from src.benchmark import Benchmarker
 from src.constructor import PipelineConstructor
 from src.multiprocessing.manager import PipelineHelper, PipelineManager
+from src.pipeline import PipelineServerInterface
 from src.utils import readall, ui_to_json
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -128,7 +129,7 @@ def _handle_connection(
         conn.close()
 
 
-class PipelineServer:
+class PipelineServer(PipelineServerInterface):
     hostname: str
     port: str
     pipeline: PipelineConstructor

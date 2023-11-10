@@ -10,10 +10,11 @@ from typing import List, Optional
 
 import numpy as np
 from fluid_ai.base import UiElement
-from PIL import Image, ImageFile
+from PIL import Image, ImageFile  # type: ignore
 
 from src.benchmark import Benchmarker
 from src.constructor import PipelineConstructor
+from src.pipeline import PipelineServerInterface
 from src.threading.helper import PipelineHelper
 from src.threading.manager import PipelineManager
 from src.utils import readall, ui_to_json
@@ -72,13 +73,13 @@ def _handle_connection(
         text_elems = []
         icon_elems = []
         results: List[UiElement] = []
-        for e in detected:
-            if e.name in helper.textual_elements:
-                text_elems.append(e)
-            elif e.name in helper.icon_elements:
-                icon_elems.append(e)
+        for elem in detected:
+            if elem.name in helper.textual_elements:
+                text_elems.append(elem)
+            elif elem.name in helper.icon_elements:
+                icon_elems.append(elem)
             else:
-                results.append(e)
+                results.append(elem)
 
         # Extract UI info.
         helper.log_debug(addr, "Extracting UI info.")
@@ -124,7 +125,7 @@ def _handle_connection(
         conn.close()
 
 
-class PipelineServer:
+class PipelineServer(PipelineServerInterface):
     hostname: str
     port: str
     pipeline: PipelineConstructor

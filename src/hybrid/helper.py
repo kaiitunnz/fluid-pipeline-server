@@ -1,5 +1,5 @@
 import os
-from PIL import Image
+from PIL import Image  # type: ignore
 from queue import SimpleQueue
 from typing import Callable, Dict, List, Optional, Tuple
 

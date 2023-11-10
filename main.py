@@ -2,7 +2,7 @@ import json
 import os
 import sys
 from argparse import ArgumentParser, Namespace
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import torch
 
@@ -15,10 +15,12 @@ from fluid_ai.icon import DummyIconLabeller
 from fluid_ai.ocr import DummyOCR
 from fluid_ai.pipeline import UiDetectionPipeline
 from fluid_ai.ui.detection import YoloUiDetector
+from fluid_ai.ui.matching import GistUiMatching
 
 from src.constructor import ModuleConstructor, PipelineConstructor
 from src.hybrid.server import PipelineServer as HybridServer
 from src.multiprocessing.server import PipelineServer as MultiprocessingServer
+from src.pipeline import PipelineServerInterface
 from src.sequential.server import PipelineServer as SequentialServer
 from src.threading.server import PipelineServer as ThreadingServer
 
@@ -53,6 +55,7 @@ def pipeline_from_config(config: Dict[str, Any]) -> UiDetectionPipeline:
         config["ui_detector"]["path"],
         device=torch.device(config["ui_detector"]["device"]),
     )
+    matcher = GistUiMatching()
     # text_recognizer = EasyOCR(batch_size=config["text_recognizer"]["batch_size"])
     # icon_labeller = ClassifierIconLabeller(
     #     config["icon_labeller"]["path"],
@@ -63,6 +66,7 @@ def pipeline_from_config(config: Dict[str, Any]) -> UiDetectionPipeline:
     icon_labeller = DummyIconLabeller()
     return UiDetectionPipeline(
         detector,
+        matcher,
         text_recognizer,
         config["special_elements"]["text"],
         icon_labeller,
@@ -76,6 +80,8 @@ def constructor_from_config(config: Dict[str, Any]) -> PipelineConstructor:
         config["ui_detector"]["path"],
         device=torch.device(config["ui_detector"]["device"]),
     )
+    matcher = ModuleConstructor(GistUiMatching)
+
     # text_recognizer = ModuleConstructor(
     #     EasyOCR, batch_size=config["text_recognizer"]["batch_size"]
     # )
@@ -89,6 +95,7 @@ def constructor_from_config(config: Dict[str, Any]) -> PipelineConstructor:
     icon_labeller = ModuleConstructor(DummyIconLabeller)
     return PipelineConstructor(
         detector,
+        matcher,
         text_recognizer,
         icon_labeller,
         config["special_elements"]["text"],
@@ -100,6 +107,7 @@ def main(args: Namespace):
     with open("config.json", "r") as f:
         config = json.load(f)
     sample_file = config["server"].pop("sample_file")
+    pipeline_server: PipelineServerInterface
     if args.mode == "sequential":
         pipeline = pipeline_from_config(config)
         pipeline_server = SequentialServer(
@@ -110,39 +118,40 @@ def main(args: Namespace):
             benchmark_file=args.benchmark,
         )
     elif args.mode == "threading":
-        pipeline = constructor_from_config(config)
+        constructor = constructor_from_config(config)
         pipeline_server = ThreadingServer(
             **config["server"],
-            pipeline=pipeline,
+            pipeline=constructor,
             verbose=args.verbose,
             benchmark=args.benchmark is not None,
             benchmark_file=args.benchmark,
         )
     elif args.mode == "multiprocessing":
-        pipeline = constructor_from_config(config)
+        constructor = constructor_from_config(config)
         pipeline_server = MultiprocessingServer(
             **config["server"],
-            pipeline=pipeline,
+            pipeline=constructor,
             verbose=args.verbose,
             benchmark=args.benchmark is not None,
             benchmark_file=args.benchmark,
         )
     elif args.mode == "hybrid":
-        pipeline = constructor_from_config(config)
+        constructor = constructor_from_config(config)
         pipeline_server = HybridServer(
             **config["server"],
-            pipeline=pipeline,
+            pipeline=constructor,
             verbose=args.verbose,
             benchmark=args.benchmark is not None,
             benchmark_file=args.benchmark,
         )
     else:
         raise NotImplementedError()
-    pipeline_server.start(warmup_image=sample_file)
+    pipeline_server.start(sample_file)
 
 
 if __name__ == "__main__":
     args = parse_args()
+    log_path: Optional[str]
     if args.silent:
         log_path = os.path.devnull
     elif args.log is None:

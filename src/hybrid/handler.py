@@ -1,17 +1,18 @@
 import multiprocessing as mp
 import numpy as np
+import os
 import signal
 import socket as sock
 import sys
 import threading
 import time
-from PIL import Image
+from PIL import Image  # type: ignore
 from io import BytesIO
 from multiprocessing.queues import SimpleQueue
 from multiprocessing.synchronize import Semaphore
 from queue import Queue
 from threading import Thread
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from fluid_ai.base import UiElement
 
@@ -20,8 +21,7 @@ from src.hybrid.benchmark import Benchmarker
 from src.hybrid.helper import PipelineHelper
 from src.hybrid.logging import Logger
 from src.hybrid.manager import PipelineManager
-from src.utils import readall, ui_to_json
-
+from src.utils import json_to_ui, readall, ui_to_json
 
 SAVE_IMG_DIR = "res"
 SAVE_IMG = False
@@ -85,29 +85,64 @@ class _HandlerHelper:
             return
 
         try:
-            packet_size = int.from_bytes(
+            # Receive a screenshot.
+            payload_size = int.from_bytes(
                 readall(conn, 4, self.chunk_size), "big", signed=False
             )
             self.helper.log_debug(
-                addr, f"Receiving a packet of size {packet_size} bytes."
+                addr, f"Receiving a screenshot payload of size {payload_size} bytes."
             )
-            if packet_size > self.max_image_size:
+            if payload_size > self.max_image_size:
                 self.helper.log_error(
-                    addr, f"The packet size exceeds the maximum allowable size."
+                    addr, f"The payload size exceeds the maximum allowable size."
                 )
                 conn.close()
                 return
+            screenshot_payload = readall(conn, payload_size, self.chunk_size)
+            self.helper.log_debug(
+                addr,
+                f"Received a screenshot payload of size {len(screenshot_payload)} bytes.",
+            )
 
-            data = readall(conn, packet_size, self.chunk_size)
-            self.helper.log_debug(addr, f"Received a packet of size {len(data)} bytes.")
-            packet = BytesIO(data)
-            img = Image.open(packet)
+            # Receive additional UI elements.
+            payload_size = int.from_bytes(
+                readall(conn, 4, self.chunk_size), "big", signed=False
+            )
+            if payload_size > 0:
+                self.helper.log_debug(
+                    addr,
+                    f"Receiving a UI-element payload of size {payload_size} bytes.",
+                )
+                element_payload = readall(conn, payload_size, self.chunk_size)
+                self.helper.log_debug(
+                    addr,
+                    f"Received a UI-element payload of size {len(element_payload)} bytes.",
+                )
+            else:
+                element_payload = None
+
+            # Parse the screenshot payload.
+            screenshot_bytes = BytesIO(screenshot_payload)
+            img = Image.open(screenshot_bytes)
             if SAVE_IMG:
                 self.helper.save_image_i(img, job_no, SAVE_IMG_DIR)
             screenshot_img = np.asarray(img)
             self.helper.log_debug(
                 addr, f"Received an image of shape {screenshot_img.shape}."
             )
+
+            # Parse the UI-element payload.
+            base_elements = (
+                None
+                if element_payload is None
+                else json_to_ui(
+                    element_payload.decode(encoding="utf-8"), screenshot_img
+                )
+            )
+            if base_elements is not None:
+                self.helper.log_debug(
+                    addr, f"Received {len(base_elements)} additional UI elements."
+                )
 
             # Detect UI elements.
             self.helper.log_debug(addr, "Detecting UI elements.")
@@ -117,11 +152,21 @@ class _HandlerHelper:
             detection_time = time.time() - detection_start  # bench
             self.helper.log_debug(addr, f"Found {len(detected)} UI elements.")
 
+            # Match UI elements
+            self.helper.log_debug(addr, "Matching UI elements.")
+            matching_start = time.time()  # bench
+            self.helper.send(PipelineConstructor.MATCHER, base_elements, detected)
+            matched = self.helper.wait_result()
+            matching_time = time.time() - matching_start  # bench
+            self.helper.log_debug(
+                addr, f"Matched UI elements. {len(matched)} UI elements left."
+            )
+
             # Partition the result.
             text_elems = []
             icon_elems = []
             results: List[UiElement] = []
-            for e in detected:
+            for e in matched:
                 if e.name in self.helper.textual_elements:
                     text_elems.append(e)
                 elif e.name in self.helper.icon_elements:
@@ -150,7 +195,7 @@ class _HandlerHelper:
             if self.helper.benchmarker is None:
                 results_json = ui_to_json(screenshot_img, results).encode("utf-8")
             else:
-                entry = [waiting_time, detection_time, text_time, icon_time, processing_time]  # type: ignore
+                entry = [waiting_time, detection_time, matching_time, text_time, icon_time, processing_time]  # type: ignore
                 self.helper.benchmarker.add(entry)
                 metrics = {"keys": self.helper.benchmarker.metrics, "values": entry}
                 results_json = ui_to_json(
@@ -196,6 +241,7 @@ class ConnectionHandler:
     _job_queue: SimpleQueue
     _process: Optional[mp.Process]
     _ready_sema: Semaphore = mp.Semaphore(0)
+    _is_ready = mp.Value("i", 0, lock=False)
     # To handle terminating signals only once
     _exit_sema: threading.Semaphore = threading.Semaphore(1)
 
@@ -265,10 +311,12 @@ class ConnectionHandler:
             handler_helper.job_queue.put(job, block=True)
 
     def _ready(self):
+        self._is_ready.value = 1
         self._ready_sema.release()
 
-    def wait_ready(self):
+    def wait_ready(self) -> bool:
         self._ready_sema.acquire()
+        return bool(self._is_ready.value)
 
     @staticmethod
     def send(
@@ -279,18 +327,46 @@ class ConnectionHandler:
     ):
         job_queue.put((job_no, start_time, conn))
 
-    def _warmup(self, helper: PipelineHelper, warmup_image: str):
+    def _error(self, message: str, info: Any):
+        self.logger.error(message)
+        self.logger.debug("Cause:")
+        self.logger.debug(str(info))
+        self._is_ready.value = 0
+
+    def _warmup(self, helper: PipelineHelper, warmup_image: str, kill: bool = True):
+        success = True
+
         self.logger.debug(f"[{self.get_name()}] Warming up the pipeline...")
         img = np.asarray(Image.open(warmup_image))
 
         # Detect UI elements.
         helper.send(PipelineConstructor.DETECTOR, img)
         detected = helper.wait_result()
+        self.logger.debug(
+            f"[{self.get_name()}] ({PipelineConstructor.DETECTOR}) PASSED."
+        )
+
+        # Match UI elements.
+        helper.send(PipelineConstructor.MATCHER, detected, detected)
+        matched = helper.wait_result()
+        if len(matched) == len(detected):
+            self.logger.debug(
+                f"[{self.get_name()}] ({PipelineConstructor.MATCHER}) PASSED."
+            )
+        else:
+            success = False
+            self.logger.debug(
+                f"[{self.get_name()}] ({PipelineConstructor.MATCHER}) FAILED."
+            )
+            self._error(
+                "Failed to initialize the pipeline.",
+                {"detected": len(detected), "matched": len(matched)},
+            )
 
         # Partition the result.
         text_elems = []
         icon_elems = []
-        for e in detected:
+        for e in matched:
             if e.name in helper.textual_elements:
                 text_elems.append(e)
             elif e.name in helper.icon_elements:
@@ -301,8 +377,19 @@ class ConnectionHandler:
         helper.send(PipelineConstructor.ICON_LABELLER, icon_elems)
         helper.wait_result()
         helper.wait_result()
+        self.logger.debug(
+            f"[{self.get_name()}] ({PipelineConstructor.TEXT_RECOGNIZER}) PASSED."
+        )
+        self.logger.debug(
+            f"[{self.get_name()}] ({PipelineConstructor.ICON_LABELLER}) PASSED."
+        )
 
-        self.logger.debug(f"[{self.get_name()}] Warm-up complete.")
+        if success:
+            self.logger.debug(f"[{self.get_name()}] Warm-up complete.")
+        else:
+            self.logger.debug(f"[{self.get_name()}] Sending termination signal.")
+            self._ready_sema.release()
+            os.kill(os.getpid(), signal.SIGTERM)
 
     def _register_signal_handlers(
         self, helper: _HandlerHelper, manager: PipelineManager

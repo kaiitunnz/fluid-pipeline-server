@@ -4,7 +4,7 @@ import socket as sock
 from typing import Any, Callable, Dict, List, Tuple
 
 import numpy as np
-from fluid_ai.base import UiElement
+from fluid_ai.base import Array, UiElement
 
 
 def parse_results(img: np.ndarray, results: Dict[str, Any]) -> List[UiElement]:
@@ -36,8 +36,29 @@ def readall(socket: sock.socket, num_bytes: int, chunk_size: int) -> bytes:
     return bytes(buffer)
 
 
-def ui_to_json(screenshot_img: np.ndarray, elems: List[UiElement], **kwargs) -> str:
-    h, w, *_ = screenshot_img.shape
+def json_to_ui(json_elements: str, screenshot: Array) -> List[UiElement]:
+    elements: List[Dict[str, Any]] = json.loads(json_elements)
+    result = []
+    for elem in elements:
+        name = elem["class"]
+        position = elem["position"]
+        info = elem["info"]
+        result.append(
+            UiElement(
+                name=name,
+                bbox=(
+                    (position["x_min"], position["y_min"]),
+                    (position["x_max"], position["y_max"]),
+                ),
+                screenshot=screenshot,
+                info=info,
+            )
+        )
+    return result
+
+
+def ui_to_json(screenshot: Array, elems: List[UiElement], **kwargs) -> str:
+    h, w, *_ = screenshot.shape
     data = {"img_shape": [w, h], "elements": [_elem_to_dict(e) for e in elems]}
     data.update(kwargs)
     return json.dumps(data)
