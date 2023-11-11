@@ -1,5 +1,5 @@
 {
-  "test_mode": true,
+  "test_mode": false,
   "server": {
     "hostname": "143.248.136.109",
     "port": 8440,
