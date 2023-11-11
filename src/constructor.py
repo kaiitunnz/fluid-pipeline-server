@@ -33,6 +33,8 @@ class PipelineConstructor:
     textual_elements: List[str]
     icon_elements: List[str]
 
+    test_mode: bool
+
     DETECTOR = "detector"
     MATCHER = "matcher"
     TEXT_RECOGNIZER = "text_recognizer"
@@ -46,9 +48,13 @@ class PipelineConstructor:
         icon_labeller: ModuleConstructor,
         textual_elements: List[str],
         icon_elements: List[str],
+        test_mode: bool = False,
     ):
         detector.func = detect
-        matcher.func = match
+        if test_mode:
+            matcher.func = match_i
+        else:
+            matcher.func = match
         text_recognizer.func = recognize_texts
         icon_labeller.func = label_icons
         self.modules = {
@@ -59,21 +65,39 @@ class PipelineConstructor:
         }
         self.textual_elements = textual_elements
         self.icon_elements = icon_elements
+        self.test_mode = test_mode
 
 
-def detect(screenshot: np.ndarray, module: UiDetectionModule) -> List[UiElement]:
+def detect(
+    _: int, screenshot: np.ndarray, module: UiDetectionModule
+) -> List[UiElement]:
     assert isinstance(module, BaseUiDetector)
     return next(module([screenshot]))
 
 
 def match(
-    base: Optional[List[UiElement]], other: List[UiElement], module: UiDetectionModule
+    _: int,
+    base: Optional[List[UiElement]],
+    other: List[UiElement],
+    module: UiDetectionModule,
 ) -> List[UiElement]:
     assert isinstance(module, BaseUiMatching)
     return module([] if base is None else base, other)
 
 
+def match_i(
+    job_no: int,
+    base: Optional[List[UiElement]],
+    other: List[UiElement],
+    module: UiDetectionModule,
+) -> List[UiElement]:
+    assert isinstance(module, BaseUiMatching)
+    base = [] if base is None else base
+    return module.match_i(job_no, base, other)
+
+
 def recognize_texts(
+    _: int,
     elements: List[UiElement],
     module: UiDetectionModule,
 ) -> List[UiElement]:
@@ -83,6 +107,7 @@ def recognize_texts(
 
 
 def label_icons(
+    _: int,
     elements: List[UiElement],
     module: UiDetectionModule,
 ) -> List[UiElement]:

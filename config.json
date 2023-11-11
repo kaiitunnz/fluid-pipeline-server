@@ -1,4 +1,5 @@
 {
+  "test_mode": true,
   "server": {
     "hostname": "143.248.136.109",
     "port": 8440,
@@ -12,10 +13,15 @@
     "path": "/media/test/noppanat/models/yolo_clay_cpu.pt",
     "device": "cuda:0"
   },
+  "ui_matcher": {
+    "method": "gist"
+  },
   "text_recognizer": {
+    "dummy": true,
     "batch_size": 1
   },
   "icon_labeller": {
+    "dummy": true,
     "path": "/media/test/noppanat/models/efficientnet_op_cpu.pt",
     "device": "cuda:0"
   },

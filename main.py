@@ -8,14 +8,16 @@ import torch
 
 sys.path.append(os.path.abspath(".."))
 
-# from fluid_ai.icon import ClassifierIconLabeller
-# from fluid_ai.ocr import EasyOCR
-
-from fluid_ai.icon import DummyIconLabeller
-from fluid_ai.ocr import DummyOCR
+from fluid_ai.icon import BaseIconLabeller, ClassifierIconLabeller, DummyIconLabeller
+from fluid_ai.ocr import BaseOCR, DummyOCR, EasyOCR
 from fluid_ai.pipeline import UiDetectionPipeline
 from fluid_ai.ui.detection import YoloUiDetector
-from fluid_ai.ui.matching import GistUiMatching
+from fluid_ai.ui.matching import (
+    BaseUiMatching,
+    IouUiMatching,
+    HogUiMatching,
+    GistUiMatching,
+)
 
 from src.constructor import ModuleConstructor, PipelineConstructor
 from src.hybrid.server import PipelineServer as HybridServer
@@ -55,15 +57,34 @@ def pipeline_from_config(config: Dict[str, Any]) -> UiDetectionPipeline:
         config["ui_detector"]["path"],
         device=torch.device(config["ui_detector"]["device"]),
     )
-    matcher = GistUiMatching()
-    # text_recognizer = EasyOCR(batch_size=config["text_recognizer"]["batch_size"])
-    # icon_labeller = ClassifierIconLabeller(
-    #     config["icon_labeller"]["path"],
-    #     batched=True,
-    #     device=torch.device(config["icon_labeller"]["device"]),
-    # )
-    text_recognizer = DummyOCR()
-    icon_labeller = DummyIconLabeller()
+
+    matching_method = config["ui_matcher"]["method"].lower()
+    matcher: BaseUiMatching
+    if matching_method == "iou":
+        matcher = IouUiMatching()
+    elif matching_method == "gist":
+        matcher = GistUiMatching()
+    elif matching_method == "hog":
+        matcher = HogUiMatching()
+    else:
+        raise NotImplementedError("The matching method is not implemented")
+
+    text_recognizer: BaseOCR
+    if config["text_recognizer"]["dummy"]:
+        text_recognizer = DummyOCR()
+    else:
+        text_recognizer = EasyOCR(batch_size=config["text_recognizer"]["batch_size"])
+
+    icon_labeller: BaseIconLabeller
+    if config["icon_labeller"]["dummy"]:
+        icon_labeller = DummyIconLabeller()
+    else:
+        icon_labeller = ClassifierIconLabeller(
+            config["icon_labeller"]["path"],
+            batched=True,
+            device=torch.device(config["icon_labeller"]["device"]),
+        )
+
     return UiDetectionPipeline(
         detector,
         matcher,
@@ -80,19 +101,34 @@ def constructor_from_config(config: Dict[str, Any]) -> PipelineConstructor:
         config["ui_detector"]["path"],
         device=torch.device(config["ui_detector"]["device"]),
     )
-    matcher = ModuleConstructor(GistUiMatching)
 
-    # text_recognizer = ModuleConstructor(
-    #     EasyOCR, batch_size=config["text_recognizer"]["batch_size"]
-    # )
-    # icon_labeller = ModuleConstructor(
-    #     ClassifierIconLabeller,
-    #     config["icon_labeller"]["path"],
-    #     batched=True,
-    #     device=torch.device(config["icon_labeller"]["device"]),
-    # )
-    text_recognizer = ModuleConstructor(DummyOCR)
-    icon_labeller = ModuleConstructor(DummyIconLabeller)
+    matching_method = config["ui_matcher"]["method"].lower()
+    if matching_method == "iou":
+        matcher = ModuleConstructor(IouUiMatching)
+    elif matching_method == "gist":
+        matcher = ModuleConstructor(GistUiMatching)
+    elif matching_method == "hog":
+        matcher = ModuleConstructor(HogUiMatching)
+    else:
+        raise NotImplementedError("The matching method is not implemented")
+
+    if config["text_recognizer"]["dummy"]:
+        text_recognizer = ModuleConstructor(DummyOCR)
+    else:
+        text_recognizer = ModuleConstructor(
+            EasyOCR, batch_size=config["text_recognizer"]["batch_size"]
+        )
+
+    if config["icon_labeller"]["dummy"]:
+        icon_labeller = ModuleConstructor(DummyIconLabeller)
+    else:
+        icon_labeller = ModuleConstructor(
+            ClassifierIconLabeller,
+            config["icon_labeller"]["path"],
+            batched=True,
+            device=torch.device(config["icon_labeller"]["device"]),
+        )
+
     return PipelineConstructor(
         detector,
         matcher,
@@ -100,6 +136,7 @@ def constructor_from_config(config: Dict[str, Any]) -> PipelineConstructor:
         icon_labeller,
         config["special_elements"]["text"],
         config["special_elements"]["icon"],
+        test_mode=config["test_mode"],
     )
 
 

@@ -7,7 +7,7 @@ import time
 from argparse import ArgumentParser, Namespace
 from typing import Any, Dict
 
-import pandas as pd
+import pandas as pd  # type: ignore
 
 sys.path.append(os.path.abspath(".."))
 
@@ -21,8 +21,11 @@ RESULT_PATH = "benchmark.csv"
 
 MAX_ERR_COUNT = 10
 
+results = None
+sample_image = None
 
-def init(results_: ..., sample_image_: str):
+
+def init(results_: Any, sample_image_: str):
     global results, sample_image
     results = results_
     sample_image = sample_image_
@@ -40,6 +43,7 @@ def request(i: int):
     err_count = 0
 
     s = None
+    assert not (results is None or sample_image is None)
     while True:
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

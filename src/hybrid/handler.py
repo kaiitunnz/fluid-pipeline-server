@@ -1,6 +1,7 @@
 import multiprocessing as mp
 import numpy as np
 import os
+import pickle
 import signal
 import socket as sock
 import sys
@@ -33,6 +34,7 @@ class _HandlerHelper:
     max_image_size: int
     job_queue: Queue
     logger: Logger
+    test_mode: bool
 
     _workers: List[Thread]
 
@@ -44,6 +46,7 @@ class _HandlerHelper:
         num_workers: int,
         logger: Logger,
         name: str,
+        test_mode: bool,
     ):
         self.helper = helper
         self.chunk_size = chunk_size
@@ -51,6 +54,7 @@ class _HandlerHelper:
         self.job_queue = Queue(num_workers)
         self.logger = logger
         self.name = name
+        self.test_mode = test_mode
 
         self._workers = [
             Thread(target=self._serve, args=(self.job_queue,), daemon=False)
@@ -143,19 +147,28 @@ class _HandlerHelper:
                 self.helper.log_debug(
                     addr, f"Received {len(base_elements)} additional UI elements."
                 )
+                if self.test_mode:
+                    with open(f"{SAVE_IMG_DIR}/base_elements{job_no}.pkl", "wb") as f:
+                        pickle.dump(base_elements, f)
 
             # Detect UI elements.
             self.helper.log_debug(addr, "Detecting UI elements.")
             detection_start = time.time()  # bench
-            self.helper.send(PipelineConstructor.DETECTOR, screenshot_img)
+            self.helper.send(PipelineConstructor.DETECTOR, job_no, screenshot_img)
             detected = self.helper.wait_result()
             detection_time = time.time() - detection_start  # bench
             self.helper.log_debug(addr, f"Found {len(detected)} UI elements.")
 
+            if self.test_mode:
+                with open(f"{SAVE_IMG_DIR}/detected_elements{job_no}.pkl", "wb") as f:
+                    pickle.dump(detected, f)
+
             # Match UI elements
             self.helper.log_debug(addr, "Matching UI elements.")
             matching_start = time.time()  # bench
-            self.helper.send(PipelineConstructor.MATCHER, base_elements, detected)
+            self.helper.send(
+                PipelineConstructor.MATCHER, job_no, base_elements, detected
+            )
             matched = self.helper.wait_result()
             matching_time = time.time() - matching_start  # bench
             self.helper.log_debug(
@@ -177,17 +190,21 @@ class _HandlerHelper:
             # Extract UI info.
             self.helper.log_debug(addr, "Extracting UI info.")
             if self.helper.benchmarker is None:
-                self.helper.send(PipelineConstructor.TEXT_RECOGNIZER, text_elems)
-                self.helper.send(PipelineConstructor.ICON_LABELLER, icon_elems)
+                self.helper.send(
+                    PipelineConstructor.TEXT_RECOGNIZER, job_no, text_elems
+                )
+                self.helper.send(PipelineConstructor.ICON_LABELLER, job_no, icon_elems)
                 results.extend(self.helper.wait_result())
                 results.extend(self.helper.wait_result())
             else:
                 text_start = time.time()  # bench
-                self.helper.send(PipelineConstructor.TEXT_RECOGNIZER, text_elems)
+                self.helper.send(
+                    PipelineConstructor.TEXT_RECOGNIZER, job_no, text_elems
+                )
                 results.extend(self.helper.wait_result())
                 text_time = time.time() - text_start  # bench
                 icon_start = time.time()  # bench
-                self.helper.send(PipelineConstructor.ICON_LABELLER, icon_elems)
+                self.helper.send(PipelineConstructor.ICON_LABELLER, job_no, icon_elems)
                 results.extend(self.helper.wait_result())
                 icon_time = time.time() - icon_start  # bench
 
@@ -294,6 +311,7 @@ class ConnectionHandler:
             self.num_workers,
             self.logger,
             self.get_name(),
+            self.constructor.test_mode,
         )
 
         manager.start()
@@ -335,19 +353,20 @@ class ConnectionHandler:
 
     def _warmup(self, helper: PipelineHelper, warmup_image: str, kill: bool = True):
         success = True
+        job_no = 0
 
         self.logger.debug(f"[{self.get_name()}] Warming up the pipeline...")
         img = np.asarray(Image.open(warmup_image))
 
         # Detect UI elements.
-        helper.send(PipelineConstructor.DETECTOR, img)
+        helper.send(PipelineConstructor.DETECTOR, job_no, img)
         detected = helper.wait_result()
         self.logger.debug(
             f"[{self.get_name()}] ({PipelineConstructor.DETECTOR}) PASSED."
         )
 
         # Match UI elements.
-        helper.send(PipelineConstructor.MATCHER, detected, detected)
+        helper.send(PipelineConstructor.MATCHER, job_no, detected, detected)
         matched = helper.wait_result()
         if len(matched) == len(detected):
             self.logger.debug(
@@ -373,8 +392,8 @@ class ConnectionHandler:
                 icon_elems.append(e)
 
         # Extract UI info.
-        helper.send(PipelineConstructor.TEXT_RECOGNIZER, text_elems)
-        helper.send(PipelineConstructor.ICON_LABELLER, icon_elems)
+        helper.send(PipelineConstructor.TEXT_RECOGNIZER, job_no, text_elems)
+        helper.send(PipelineConstructor.ICON_LABELLER, job_no, icon_elems)
         helper.wait_result()
         helper.wait_result()
         self.logger.debug(
@@ -389,7 +408,8 @@ class ConnectionHandler:
         else:
             self.logger.debug(f"[{self.get_name()}] Sending termination signal.")
             self._ready_sema.release()
-            os.kill(os.getpid(), signal.SIGTERM)
+            if kill:
+                os.kill(os.getpid(), signal.SIGTERM)
 
     def _register_signal_handlers(
         self, helper: _HandlerHelper, manager: PipelineManager
