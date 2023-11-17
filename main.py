@@ -61,11 +61,11 @@ def pipeline_from_config(config: Dict[str, Any]) -> UiDetectionPipeline:
     matching_method = config["ui_matcher"]["method"].lower()
     matcher: BaseUiMatching
     if matching_method == "iou":
-        matcher = IouUiMatching()
+        matcher = IouUiMatching(**config["ui_matcher"]["args"])
     elif matching_method == "gist":
-        matcher = GistUiMatching()
+        matcher = GistUiMatching(**config["ui_matcher"]["args"])
     elif matching_method == "hog":
-        matcher = HogUiMatching()
+        matcher = HogUiMatching(**config["ui_matcher"]["args"])
     else:
         raise NotImplementedError("The matching method is not implemented")
 
@@ -104,11 +104,11 @@ def constructor_from_config(config: Dict[str, Any]) -> PipelineConstructor:
 
     matching_method = config["ui_matcher"]["method"].lower()
     if matching_method == "iou":
-        matcher = ModuleConstructor(IouUiMatching)
+        matcher = ModuleConstructor(IouUiMatching, **config["ui_matcher"]["args"])
     elif matching_method == "gist":
-        matcher = ModuleConstructor(GistUiMatching)
+        matcher = ModuleConstructor(GistUiMatching, **config["ui_matcher"]["args"])
     elif matching_method == "hog":
-        matcher = ModuleConstructor(HogUiMatching)
+        matcher = ModuleConstructor(HogUiMatching, **config["ui_matcher"]["args"])
     else:
         raise NotImplementedError("The matching method is not implemented")
 

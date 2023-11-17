@@ -14,7 +14,8 @@
     "device": "cuda:0"
   },
   "ui_matcher": {
-    "method": "gist"
+    "method": "iou",
+    "args": { "iou_threshold": 0.6 }
   },
   "text_recognizer": {
     "dummy": true,
