@@ -19,7 +19,6 @@ from src.pipeline import PipelineServerInterface
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 DEFAULT_BENCHMARK_FILE = "benchmark.csv"
-SOCKET_TIMEOUT = 5
 
 
 class PipelineServer(PipelineServerInterface):
@@ -132,7 +131,6 @@ class PipelineServer(PipelineServerInterface):
             conn, addr = self.socket.accept()
             self.logger.info(f'Got connection from "{addr[0]}:{addr[1]}"')
             job_no += 1
-            conn.settimeout(SOCKET_TIMEOUT)
             ConnectionHandler.send(job_queue, job_no, time.time(), conn)
 
     def _register_signal_handlers(

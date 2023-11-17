@@ -26,6 +26,7 @@ from src.utils import json_to_ui, readall, ui_to_json
 
 SAVE_IMG_DIR = "res"
 SAVE_IMG = False
+SOCKET_TIMEOUT = 5
 
 
 class _HandlerHelper:
@@ -82,6 +83,7 @@ class _HandlerHelper:
 
         try:
             addr = conn.getpeername()
+            conn.settimeout(SOCKET_TIMEOUT)
         except Exception as e:
             self.helper.logger.error(
                 f"The following exception occurred while attempting to connect: {e}"
