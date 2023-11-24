@@ -23,7 +23,7 @@
   },
   "icon_labeller": {
     "dummy": true,
-    "path": "/media/test/noppanat/models/efficientnet_op_cpu.pt",
+    "path": "/media/test/noppanat/models/efficientnet_op_cpu_migrated.pt",
     "device": "cuda:0"
   },
   "special_elements": {
