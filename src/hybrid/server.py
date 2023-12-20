@@ -64,7 +64,9 @@ class PipelineServer(PipelineServerInterface):
         benchmark_metrics = [
             "Waiting time",
             "UI detection time",
-            "Matching time",
+            "Invalid UI detection time",
+            "UI matching time",
+            "UI processing time",
             "Text recognition time",
             "Icon labeling time",
             "Processing time",

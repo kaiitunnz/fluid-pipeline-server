@@ -4,7 +4,7 @@ import socket as sock
 from typing import Any, Callable, Dict, List, Tuple
 
 import numpy as np
-from fluid_ai.base import Array, UiElement
+from fluid_ai.base import Array, BBox, NormalizedBBox, UiElement, array_get_size
 
 
 def parse_results(img: np.ndarray, results: Dict[str, Any]) -> List[UiElement]:
@@ -12,12 +12,13 @@ def parse_results(img: np.ndarray, results: Dict[str, Any]) -> List[UiElement]:
     for elem in results["elements"]:
         name = elem["class"]
         position = elem["position"]
-        bbox = (
+        nbox = NormalizedBBox.new(
             (position["x_min"], position["y_min"]),
             (position["x_max"], position["y_max"]),
+            unchecked=True,
         )
         info = elem["info"]
-        ui_element = UiElement(name, bbox, img)
+        ui_element = UiElement(name, nbox, img)
         ui_element.info = info
         elems.append(ui_element)
     return elems
@@ -39,17 +40,20 @@ def readall(socket: sock.socket, num_bytes: int, chunk_size: int) -> bytes:
 def json_to_ui(json_elements: str, screenshot: Array) -> List[UiElement]:
     elements: List[Dict[str, Any]] = json.loads(json_elements)
     result = []
+    w, h = array_get_size(screenshot)
     for elem in elements:
         name = elem["class"]
         position = elem["position"]
         info = elem["info"]
+        nbox = BBox(
+            (position["x_min"], position["y_min"]),
+            (position["x_max"], position["y_max"]),
+        ).to_normalized(w, h, unchecked=True)
+        assert nbox is not None
         result.append(
             UiElement(
                 name=name,
-                bbox=(
-                    (position["x_min"], position["y_min"]),
-                    (position["x_max"], position["y_max"]),
-                ),
+                bbox=nbox,
                 screenshot=screenshot,
                 info=info,
             )
@@ -65,7 +69,8 @@ def ui_to_json(screenshot: Array, elems: List[UiElement], **kwargs) -> str:
 
 
 def _elem_to_dict(elem: UiElement) -> Dict[str, Any]:
-    (x0, y0), (x1, y1) = elem.bbox
+    w, h = array_get_size(elem.get_screenshot())
+    (x0, y0), (x1, y1) = elem.bbox.to_bbox(w, h)
     return {
         "class": elem.name,
         "position": {

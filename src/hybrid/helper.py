@@ -9,11 +9,12 @@ from src.constructor import ModuleConstructor, PipelineConstructor
 from src.hybrid.benchmark import Benchmarker
 from src.hybrid.logging import Logger
 from src.hybrid.worker import Worker
+from src.pipeline import PipelineModule
 
 
 class PipelineManagerHelper:
     key: int
-    workers: Dict[str, Worker]
+    workers: Dict[PipelineModule, Worker]
 
     textual_elements: List[str]
     icon_elements: List[str]
@@ -43,9 +44,14 @@ class PipelineManagerHelper:
 
         self._count = 0
 
-    def _create_worker(self, name: str, module: ModuleConstructor) -> Worker:
+    def _create_worker(self, name: PipelineModule, module: ModuleConstructor) -> Worker:
         return Worker(
-            module.func, SimpleQueue(), module(), self.logger, name + str(self.key)
+            module.func,
+            SimpleQueue(),
+            module(),
+            self.logger,
+            name.value + str(self.key),
+            module.is_thread,
         )
 
     def get_helper(self) -> "PipelineHelper":
@@ -72,7 +78,7 @@ class PipelineManagerHelper:
 class PipelineHelper:
     key: int
 
-    _workers: Dict[str, Worker]
+    _workers: Dict[PipelineModule, Worker]
 
     textual_elements: List[str]
     icon_elements: List[str]
@@ -80,12 +86,12 @@ class PipelineHelper:
     logger: Logger
     benchmarker: Optional[Benchmarker]
 
-    _channel: SimpleQueue
+    _channels: Dict[PipelineModule, SimpleQueue]
 
     def __init__(
         self,
         key: int,
-        workers: Dict[str, Worker],
+        workers: Dict[PipelineModule, Worker],
         textual_elements: List[str],
         icon_elements: List[str],
         logger: Logger,
@@ -97,13 +103,17 @@ class PipelineHelper:
         self.icon_elements = icon_elements
         self.logger = logger
         self.benchmarker = benchmarker
-        self._channel = SimpleQueue()
+        self._channels = {k: SimpleQueue() for k in workers.keys()}
 
-    def send(self, target: str, *args):
-        self._workers[target].channel.put((self._channel, args))
+    def send(self, target: PipelineModule, *args):
+        worker = self._workers[target]
+        if worker._is_thread:
+            worker.channel.put((self._channels[target], args))
+        else:
+            self._channels[target].put(worker.func(*args, module=worker.module))
 
-    def wait_result(self) -> List[UiElement]:
-        return self._channel.get()
+    def wait(self, target: PipelineModule) -> List[UiElement]:
+        return self._channels[target].get()
 
     def save_image(self, img: Image.Image, save_dir: str, prefix: str = "img"):
         img.save(os.path.join(save_dir, f"{prefix}{self.key}.jpg"))

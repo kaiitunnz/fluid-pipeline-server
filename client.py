@@ -5,7 +5,7 @@ import os
 import socket as sock
 import sys
 import time
-from typing import List
+from typing import Dict, List
 
 import numpy as np
 from PIL import Image  # type: ignore

@@ -14,6 +14,7 @@ from src.constructor import PipelineConstructor
 from src.multiprocessing.helper import PipelineHelper, PipelineManagerHelper
 from src.multiprocessing.logging import LogListener
 from src.multiprocessing.worker import Worker
+from src.pipeline import PipelineModule
 
 
 def detect(screenshot: Tensor, module: Any) -> List[UiElement]:
@@ -77,27 +78,27 @@ class PipelineManager:
 
         self.detector_worker = Worker(
             detect,
-            self.pipeline.modules[PipelineConstructor.DETECTOR],
+            self.pipeline.modules[PipelineModule.DETECTOR],
             self._helper.detector_ch,
             self._helper.detector_pool,
             logger,
-            PipelineConstructor.DETECTOR,
+            PipelineModule.DETECTOR,
         )
         self.text_recognizer_worker = Worker(
             recognize_texts,
-            self.pipeline.modules[PipelineConstructor.TEXT_RECOGNIZER],
+            self.pipeline.modules[PipelineModule.TEXT_RECOGNIZER],
             self._helper.text_recognizer_ch,
             self._helper.text_recognizer_pool,
             logger,
-            PipelineConstructor.TEXT_RECOGNIZER,
+            PipelineModule.TEXT_RECOGNIZER,
         )
         self.icon_labeller_worker = Worker(
             label_icons,
-            self.pipeline.modules[PipelineConstructor.ICON_LABELLER],
+            self.pipeline.modules[PipelineModule.ICON_LABELLER],
             self._helper.icon_labeller_ch,
             self._helper.icon_labeller_pool,
             logger,
-            PipelineConstructor.ICON_LABELLER,
+            PipelineModule.ICON_LABELLER,
         )
 
         self.log_listener.start()

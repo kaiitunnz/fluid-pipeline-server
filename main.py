@@ -12,6 +12,11 @@ from fluid_ai.icon import BaseIconLabeller, ClassifierIconLabeller, DummyIconLab
 from fluid_ai.ocr import BaseOCR, DummyOCR, EasyOCR
 from fluid_ai.pipeline import UiDetectionPipeline
 from fluid_ai.ui.detection import YoloUiDetector
+from fluid_ai.ui.filter import (
+    BoundaryUiFilter,
+    DummyUiFilter,
+    ElementUiFilter,
+)
 from fluid_ai.ui.matching import (
     BaseUiMatching,
     IouUiMatching,
@@ -58,6 +63,17 @@ def pipeline_from_config(config: Dict[str, Any]) -> UiDetectionPipeline:
         device=torch.device(config["ui_detector"]["device"]),
     )
 
+    if config["ui_filter"]["dummy"]:
+        filter = DummyUiFilter()
+    else:
+        filter_method = config["ui_filter"]["method"].lower()
+        if filter_method == "element":
+            filter = ElementUiFilter(**config["ui_filter"]["args"])
+        elif filter_method == "boundary":
+            filter = BoundaryUiFilter(**config["ui_filter"]["args"])
+        else:
+            raise NotImplementedError("The filter method is not implemented")
+
     matching_method = config["ui_matcher"]["method"].lower()
     matcher: BaseUiMatching
     if matching_method == "iou":
@@ -87,6 +103,7 @@ def pipeline_from_config(config: Dict[str, Any]) -> UiDetectionPipeline:
 
     return UiDetectionPipeline(
         detector,
+        filter,
         matcher,
         text_recognizer,
         config["special_elements"]["text"],
@@ -102,13 +119,36 @@ def constructor_from_config(config: Dict[str, Any]) -> PipelineConstructor:
         device=torch.device(config["ui_detector"]["device"]),
     )
 
+    if config["ui_filter"]["dummy"]:
+        filter = ModuleConstructor(DummyUiFilter)
+    else:
+        filter_method = config["ui_filter"]["method"].lower()
+        if filter_method == "element":
+            filter = ModuleConstructor(ElementUiFilter, **config["ui_filter"]["args"])
+        elif filter_method == "boundary":
+            filter = ModuleConstructor(BoundaryUiFilter, **config["ui_filter"]["args"])
+        else:
+            raise NotImplementedError("The filter method is not implemented")
+
     matching_method = config["ui_matcher"]["method"].lower()
     if matching_method == "iou":
-        matcher = ModuleConstructor(IouUiMatching, **config["ui_matcher"]["args"])
+        matcher = ModuleConstructor(
+            IouUiMatching,
+            is_thread=config["ui_matcher"]["is_thread"],
+            **config["ui_matcher"]["args"],
+        )
     elif matching_method == "gist":
-        matcher = ModuleConstructor(GistUiMatching, **config["ui_matcher"]["args"])
+        matcher = ModuleConstructor(
+            GistUiMatching,
+            is_thread=config["ui_matcher"]["is_thread"],
+            **config["ui_matcher"]["args"],
+        )
     elif matching_method == "hog":
-        matcher = ModuleConstructor(HogUiMatching, **config["ui_matcher"]["args"])
+        matcher = ModuleConstructor(
+            HogUiMatching,
+            is_thread=config["ui_matcher"]["is_thread"],
+            **config["ui_matcher"]["args"],
+        )
     else:
         raise NotImplementedError("The matching method is not implemented")
 
@@ -131,6 +171,7 @@ def constructor_from_config(config: Dict[str, Any]) -> PipelineConstructor:
 
     return PipelineConstructor(
         detector,
+        filter,
         matcher,
         text_recognizer,
         icon_labeller,

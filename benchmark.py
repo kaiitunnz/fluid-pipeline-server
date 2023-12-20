@@ -9,26 +9,38 @@ from typing import Any, Dict
 
 import pandas as pd  # type: ignore
 
-sys.path.append(os.path.abspath(".."))
-
-from src.utils import readall
-
-NUM_REQUESTS = 100
+NUM_REQUESTS = 200
 NUM_CONCURRENT = mp.cpu_count()
 CONFIG_FILE = "config.json"
 SAMPLE_IMAGE = os.path.join("res", "sample.jpg")
+SAMPLE_ELEMENTS = os.path.join("res", "sample.json")
 RESULT_PATH = "benchmark.csv"
 
 MAX_ERR_COUNT = 10
 
-results = None
-sample_image = None
+results: Any
+sample_image: str
+sample_elements: str
 
 
-def init(results_: Any, sample_image_: str):
-    global results, sample_image
+def readall(s: socket.socket, num_bytes: int, chunk_size: int) -> bytes:
+    buffer = bytearray(num_bytes)
+    curr = 0
+    while curr < num_bytes:
+        if chunk_size < 0:
+            data = s.recv(num_bytes)
+        else:
+            data = s.recv(min(chunk_size, num_bytes - curr))
+        buffer[curr : curr + len(data)] = data
+        curr += len(data)
+    return bytes(buffer)
+
+
+def init(results_: Any, sample_image_: str, sample_elements_: str):
+    global results, sample_image, sample_elements
     results = results_
     sample_image = sample_image_
+    sample_elements = sample_elements_
 
 
 def load_server_config(config_path: str) -> Dict[str, Any]:
@@ -43,7 +55,6 @@ def request(i: int):
     err_count = 0
 
     s = None
-    assert not (results is None or sample_image is None)
     while True:
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -54,6 +65,10 @@ def request(i: int):
             n = os.path.getsize(sample_image)
             s.sendall(n.to_bytes(4, "big", signed=False))
             with open(sample_image, "rb") as f:
+                s.sendfile(f)
+            n = os.path.getsize(sample_elements)
+            s.sendall(n.to_bytes(4, "big", signed=False))
+            with open(sample_elements, "rb") as f:
                 s.sendfile(f)
 
             n = int.from_bytes(readall(s, 4, chunk_size), "big", signed=False)
@@ -116,6 +131,12 @@ def parse_args() -> Namespace:
         default=SAMPLE_IMAGE,
     )
     parser.add_argument(
+        "-e",
+        action="store",
+        help="Path to additional UI elements",
+        default=SAMPLE_ELEMENTS,
+    )
+    parser.add_argument(
         "-r",
         action="store",
         help="Path to the result file to be stored",
@@ -136,7 +157,9 @@ def main(args: Namespace):
 
     with mp.Manager() as manager:
         r = manager.list()
-        with mp.Pool(processes=args.c, initializer=init, initargs=(r, args.f)) as pool:
+        with mp.Pool(
+            processes=args.c, initializer=init, initargs=(r, args.f, args.e)
+        ) as pool:
             pool.map(request, range(args.n))
         bench_results = pd.DataFrame(
             [list(row["values"]) for row in r], columns=r[0]["keys"]

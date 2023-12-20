@@ -14,7 +14,7 @@ from PIL import Image, ImageFile  # type: ignore
 
 from src.benchmark import Benchmarker
 from src.constructor import PipelineConstructor
-from src.pipeline import PipelineServerInterface
+from src.pipeline import PipelineModule, PipelineServerInterface
 from src.threading.helper import PipelineHelper
 from src.threading.manager import PipelineManager
 from src.utils import readall, ui_to_json
@@ -64,7 +64,7 @@ def _handle_connection(
         # Detect UI elements.
         helper.log_debug(addr, "Detecting UI elements.")
         detection_start = time.time()  # bench
-        helper.send(PipelineConstructor.DETECTOR, screenshot_img)
+        helper.send(PipelineModule.DETECTOR, screenshot_img)
         detected = helper.wait_result()
         detection_time = time.time() - detection_start  # bench
         helper.log_debug(addr, f"Found {len(detected)} UI elements.")
@@ -84,17 +84,17 @@ def _handle_connection(
         # Extract UI info.
         helper.log_debug(addr, "Extracting UI info.")
         if helper.benchmarker is None:
-            helper.send(PipelineConstructor.TEXT_RECOGNIZER, text_elems)
-            helper.send(PipelineConstructor.ICON_LABELLER, icon_elems)
+            helper.send(PipelineModule.TEXT_RECOGNIZER, text_elems)
+            helper.send(PipelineModule.ICON_LABELLER, icon_elems)
             results.extend(helper.wait_result())
             results.extend(helper.wait_result())
         else:
             text_start = time.time()  # bench
-            helper.send(PipelineConstructor.TEXT_RECOGNIZER, text_elems)
+            helper.send(PipelineModule.TEXT_RECOGNIZER, text_elems)
             results.extend(helper.wait_result())
             text_time = time.time() - text_start  # bench
             icon_start = time.time()  # bench
-            helper.send(PipelineConstructor.ICON_LABELLER, icon_elems)
+            helper.send(PipelineModule.ICON_LABELLER, icon_elems)
             results.extend(helper.wait_result())
             icon_time = time.time() - icon_start  # bench
 
@@ -216,7 +216,7 @@ class PipelineServer(PipelineServerInterface):
 
         for i in range(self.num_instances):
             # Detect UI elements.
-            helper.sendi(PipelineConstructor.DETECTOR, i, img)
+            helper.sendi(PipelineModule.DETECTOR, i, img)
             detected = helper.wait_result()
 
             # Partition the result.
@@ -229,8 +229,8 @@ class PipelineServer(PipelineServerInterface):
                     icon_elems.append(e)
 
             # Extract UI info.
-            helper.sendi(PipelineConstructor.TEXT_RECOGNIZER, i, text_elems)
-            helper.sendi(PipelineConstructor.ICON_LABELLER, i, icon_elems)
+            helper.sendi(PipelineModule.TEXT_RECOGNIZER, i, text_elems)
+            helper.sendi(PipelineModule.ICON_LABELLER, i, icon_elems)
             helper.wait_result()
             helper.wait_result()
 

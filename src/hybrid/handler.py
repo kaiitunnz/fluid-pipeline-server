@@ -22,6 +22,7 @@ from src.hybrid.benchmark import Benchmarker
 from src.hybrid.helper import PipelineHelper
 from src.hybrid.logging import Logger
 from src.hybrid.manager import PipelineManager
+from src.pipeline import PipelineModule
 from src.utils import json_to_ui, readall, ui_to_json
 
 SAVE_IMG_DIR = "res"
@@ -153,13 +154,37 @@ class _HandlerHelper:
                     with open(f"{SAVE_IMG_DIR}/base_elements{job_no}.pkl", "wb") as f:
                         pickle.dump(base_elements, f)
 
-            # Detect UI elements.
-            self.helper.log_debug(addr, "Detecting UI elements.")
             detection_start = time.time()  # bench
-            self.helper.send(PipelineConstructor.DETECTOR, job_no, screenshot_img)
-            detected = self.helper.wait_result()
-            detection_time = time.time() - detection_start  # bench
-            self.helper.log_debug(addr, f"Found {len(detected)} UI elements.")
+            if self.helper.benchmarker is None:
+                # Detect UI elements and filter additional UI elements.
+                self.helper.log_debug(
+                    addr, "Detecting UI elements and filtering additional UI elements."
+                )
+                self.helper.send(PipelineModule.DETECTOR, job_no, screenshot_img)
+                self.helper.send(PipelineModule.FILTER, job_no, base_elements)
+                detected = self.helper.wait(PipelineModule.DETECTOR)
+                filtered = self.helper.wait(PipelineModule.FILTER)
+                self.helper.log_debug(addr, f"Found {len(detected)} UI elements.")
+                self.helper.log_debug(
+                    addr, f"Filtered in {len(filtered)} additional UI elements."
+                )
+            else:
+                # Detect UI elements.
+                self.helper.log_debug(addr, "Detecting UI elements.")
+                self.helper.send(PipelineModule.DETECTOR, job_no, screenshot_img)
+                detected = self.helper.wait(PipelineModule.DETECTOR)
+                detection_time = time.time() - detection_start  # bench
+                self.helper.log_debug(addr, f"Found {len(detected)} UI elements.")
+
+                # Filter additional UI elements.
+                self.helper.log_debug(addr, "Filtering additional UI elements.")
+                filter_start = time.time()  # bench
+                self.helper.send(PipelineModule.FILTER, job_no, base_elements)
+                filtered = self.helper.wait(PipelineModule.FILTER)
+                filter_time = time.time() - filter_start  # bench
+                self.helper.log_debug(
+                    addr, f"Filtered in {len(filtered)} additional UI elements."
+                )
 
             if self.test_mode:
                 with open(f"{SAVE_IMG_DIR}/detected_elements{job_no}.pkl", "wb") as f:
@@ -168,14 +193,14 @@ class _HandlerHelper:
             # Match UI elements
             self.helper.log_debug(addr, "Matching UI elements.")
             matching_start = time.time()  # bench
-            self.helper.send(
-                PipelineConstructor.MATCHER, job_no, base_elements, detected
-            )
-            matched = self.helper.wait_result()
+            self.helper.send(PipelineModule.MATCHER, job_no, filtered, detected)
+            matched = self.helper.wait(PipelineModule.MATCHER)
             matching_time = time.time() - matching_start  # bench
             self.helper.log_debug(
                 addr, f"Matched UI elements. {len(matched)} UI elements left."
             )
+
+            ui_processing_time = time.time() - detection_start  # bench
 
             # Partition the result.
             text_elems = []
@@ -192,29 +217,25 @@ class _HandlerHelper:
             # Extract UI info.
             self.helper.log_debug(addr, "Extracting UI info.")
             if self.helper.benchmarker is None:
-                self.helper.send(
-                    PipelineConstructor.TEXT_RECOGNIZER, job_no, text_elems
-                )
-                self.helper.send(PipelineConstructor.ICON_LABELLER, job_no, icon_elems)
-                results.extend(self.helper.wait_result())
-                results.extend(self.helper.wait_result())
+                self.helper.send(PipelineModule.TEXT_RECOGNIZER, job_no, text_elems)
+                self.helper.send(PipelineModule.ICON_LABELLER, job_no, icon_elems)
+                results.extend(self.helper.wait(PipelineModule.TEXT_RECOGNIZER))
+                results.extend(self.helper.wait(PipelineModule.ICON_LABELLER))
             else:
                 text_start = time.time()  # bench
-                self.helper.send(
-                    PipelineConstructor.TEXT_RECOGNIZER, job_no, text_elems
-                )
-                results.extend(self.helper.wait_result())
+                self.helper.send(PipelineModule.TEXT_RECOGNIZER, job_no, text_elems)
+                results.extend(self.helper.wait(PipelineModule.TEXT_RECOGNIZER))
                 text_time = time.time() - text_start  # bench
                 icon_start = time.time()  # bench
-                self.helper.send(PipelineConstructor.ICON_LABELLER, job_no, icon_elems)
-                results.extend(self.helper.wait_result())
+                self.helper.send(PipelineModule.ICON_LABELLER, job_no, icon_elems)
+                results.extend(self.helper.wait(PipelineModule.ICON_LABELLER))
                 icon_time = time.time() - icon_start  # bench
 
             processing_time = time.time() - detection_start  # bench
             if self.helper.benchmarker is None:
                 results_json = ui_to_json(screenshot_img, results).encode("utf-8")
             else:
-                entry = [waiting_time, detection_time, matching_time, text_time, icon_time, processing_time]  # type: ignore
+                entry = [waiting_time, detection_time, filter_time, matching_time, ui_processing_time, text_time, icon_time, processing_time]  # type: ignore
                 self.helper.benchmarker.add(entry)
                 metrics = {"keys": self.helper.benchmarker.metrics, "values": entry}
                 results_json = ui_to_json(
@@ -361,27 +382,35 @@ class ConnectionHandler:
         img = np.asarray(Image.open(warmup_image))
 
         # Detect UI elements.
-        helper.send(PipelineConstructor.DETECTOR, job_no, img)
-        detected = helper.wait_result()
+        helper.send(PipelineModule.DETECTOR, job_no, img)
+        detected = helper.wait(PipelineModule.DETECTOR)
         self.logger.debug(
-            f"[{self.get_name()}] ({PipelineConstructor.DETECTOR}) PASSED."
+            f"[{self.get_name()}] ({PipelineModule.DETECTOR.value}) PASSED."
         )
 
+        # Filter UI elements.
+        helper.send(PipelineModule.FILTER, job_no, detected)
+        filtered = helper.wait(PipelineModule.FILTER)
+
         # Match UI elements.
-        helper.send(PipelineConstructor.MATCHER, job_no, detected, detected)
-        matched = helper.wait_result()
-        if len(matched) == len(detected):
+        helper.send(PipelineModule.MATCHER, job_no, filtered, filtered)
+        matched = helper.wait(PipelineModule.MATCHER)
+        if len(matched) == len(filtered):
             self.logger.debug(
-                f"[{self.get_name()}] ({PipelineConstructor.MATCHER}) PASSED."
+                f"[{self.get_name()}] ({PipelineModule.MATCHER.value}) PASSED."
             )
         else:
             success = False
             self.logger.debug(
-                f"[{self.get_name()}] ({PipelineConstructor.MATCHER}) FAILED."
+                f"[{self.get_name()}] ({PipelineModule.MATCHER.value}) FAILED."
             )
             self._error(
                 "Failed to initialize the pipeline.",
-                {"detected": len(detected), "matched": len(matched)},
+                {
+                    "detected": len(detected),
+                    "filtered": len(filtered),
+                    "matched": len(matched),
+                },
             )
 
         # Partition the result.
@@ -394,15 +423,15 @@ class ConnectionHandler:
                 icon_elems.append(e)
 
         # Extract UI info.
-        helper.send(PipelineConstructor.TEXT_RECOGNIZER, job_no, text_elems)
-        helper.send(PipelineConstructor.ICON_LABELLER, job_no, icon_elems)
-        helper.wait_result()
-        helper.wait_result()
+        helper.send(PipelineModule.TEXT_RECOGNIZER, job_no, text_elems)
+        helper.send(PipelineModule.ICON_LABELLER, job_no, icon_elems)
+        helper.wait(PipelineModule.TEXT_RECOGNIZER)
+        helper.wait(PipelineModule.ICON_LABELLER)
         self.logger.debug(
-            f"[{self.get_name()}] ({PipelineConstructor.TEXT_RECOGNIZER}) PASSED."
+            f"[{self.get_name()}] ({PipelineModule.TEXT_RECOGNIZER.value}) PASSED."
         )
         self.logger.debug(
-            f"[{self.get_name()}] ({PipelineConstructor.ICON_LABELLER}) PASSED."
+            f"[{self.get_name()}] ({PipelineModule.ICON_LABELLER.value}) PASSED."
         )
 
         if success:

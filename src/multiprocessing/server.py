@@ -11,7 +11,7 @@ import numpy as np
 import torch
 import torch.multiprocessing as tmp
 from PIL import Image, ImageFile  # type: ignore
-from fluid_ai.base import UiElement
+from fluid_ai.base import UiElement, array_to_tensor
 from multiprocessing.managers import SyncManager
 from multiprocessing.pool import Pool
 
@@ -60,7 +60,7 @@ def _handle_connection(
         img = Image.open(packet)
         if SAVE_IMG:
             helper.save_image(img, SAVE_IMG_DIR)
-        screenshot_img = torch.tensor(np.asarray(img))
+        screenshot_img = array_to_tensor(np.asarray(img))
         helper.log_debug(
             addr, f"Received an image of shape {tuple(screenshot_img.size())}."
         )
@@ -224,7 +224,7 @@ class PipelineServer(PipelineServerInterface):
     def _warmup(self, helper: PipelineHelper, warmup_image: str):
         self.logger.info("Warming up the pipeline...")
         img = Image.open(warmup_image)
-        screenshot_img = torch.tensor(np.asarray(img))
+        screenshot_img = array_to_tensor(np.asarray(img))
 
         # Detect UI elements.
         helper.detect(screenshot_img)

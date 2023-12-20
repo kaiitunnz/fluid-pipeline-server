@@ -13,8 +13,18 @@
     "path": "/media/test/noppanat/models/yolo_clay_cpu.pt",
     "device": "cuda:0"
   },
+  "ui_filter": {
+    "method": "boundary",
+    "dummy": false,
+    "args": {
+      "model_path": "/media/test/noppanat/models/ui_filter_boundary.pt",
+      "batch_size": 32,
+      "device": "cuda:0"
+    }
+  },
   "ui_matcher": {
     "method": "iou",
+    "is_thread": false,
     "args": { "iou_threshold": 0.6 }
   },
   "text_recognizer": {

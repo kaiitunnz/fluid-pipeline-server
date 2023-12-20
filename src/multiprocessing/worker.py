@@ -5,6 +5,7 @@ from queue import Queue
 from typing import Any, Callable, Optional
 
 from src.multiprocessing.logging import Logger
+from src.pipeline import PipelineModule
 
 
 class Worker:
@@ -23,18 +24,21 @@ class Worker:
         channel: Queue,
         result_pool: DictProxy,
         logger: Logger,
-        name: Optional[str] = None,
+        name: Optional[PipelineModule] = None,
     ):
         self.func = func
         self.constructor = constructor
         self.channel = channel
         self.result_pool = result_pool
         self.logger = logger
-        self.name = name
+        self.name = None if name is None else name.value
 
     def start(self):
         self.process = tmp.Process(
-            target=self.serve, name=self.name, args=(self.constructor,), daemon=False
+            target=self.serve,
+            name=self.name,
+            args=(self.constructor,),
+            daemon=False,
         )
         self.process.start()
 

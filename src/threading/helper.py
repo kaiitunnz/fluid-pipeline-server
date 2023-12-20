@@ -1,5 +1,5 @@
 import os
-from PIL import Image
+from PIL import Image  # type: ignore
 from logging import Logger
 from queue import SimpleQueue
 from typing import Callable, Dict, List, Optional, Tuple
@@ -8,12 +8,13 @@ from fluid_ai.base import UiElement
 
 from src.benchmark import Benchmarker
 from src.constructor import ModuleConstructor, PipelineConstructor
+from src.pipeline import PipelineModule
 from src.threading.loadbalancer import LoadBalancer
 from src.threading.worker import Worker
 
 
 class PipelineManagerHelper:
-    channels: Dict[str, LoadBalancer]
+    channels: Dict[PipelineModule, LoadBalancer]
 
     textual_elements: List[str]
     icon_elements: List[str]
@@ -45,10 +46,12 @@ class PipelineManagerHelper:
         self._count = 0
 
     def _create_module_instance(
-        self, name: str, module: ModuleConstructor
+        self, name: PipelineModule, module: ModuleConstructor
     ) -> LoadBalancer:
         workers = [
-            Worker(module.func, SimpleQueue(), module(), self.logger, name + str(i))
+            Worker(
+                module.func, SimpleQueue(), module(), self.logger, name.value + str(i)
+            )
             for i in range(self.num_instances)
         ]
         return LoadBalancer(workers, self.logger)
@@ -77,7 +80,7 @@ class PipelineManagerHelper:
 class PipelineHelper:
     key: int
 
-    _channels: Dict[str, LoadBalancer]
+    _channels: Dict[PipelineModule, LoadBalancer]
 
     textual_elements: List[str]
     icon_elements: List[str]
@@ -90,7 +93,7 @@ class PipelineHelper:
     def __init__(
         self,
         key: int,
-        channels: Dict[str, LoadBalancer],
+        channels: Dict[PipelineModule, LoadBalancer],
         textual_elements: List[str],
         icon_elements: List[str],
         logger: Logger,
@@ -104,10 +107,10 @@ class PipelineHelper:
         self.benchmarker = benchmarker
         self._channel = SimpleQueue()
 
-    def send(self, target: str, *args):
+    def send(self, target: PipelineModule, *args):
         self._channels[target].send((self._channel, args))
 
-    def sendi(self, target: str, i: int, *args):
+    def sendi(self, target: PipelineModule, i: int, *args):
         self._channels[target].sendi(i, (self._channel, args))
 
     def wait_result(self) -> List[UiElement]:
