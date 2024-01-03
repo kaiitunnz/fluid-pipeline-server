@@ -48,7 +48,7 @@ def json_to_ui(json_elements: str, screenshot: Array) -> List[UiElement]:
         nbox = BBox(
             (position["x_min"], position["y_min"]),
             (position["x_max"], position["y_max"]),
-        ).to_normalized(w, h, unchecked=True)
+        ).to_normalized_unchecked(w, h)
         assert nbox is not None
         result.append(
             UiElement(
