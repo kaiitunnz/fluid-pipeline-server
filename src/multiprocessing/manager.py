@@ -2,7 +2,7 @@ import logging
 from typing import Any, List, Optional
 
 from fluid_ai.base import UiElement
-from fluid_ai.icon import BaseIconLabeller
+from fluid_ai.icon import BaseIconLabeler
 from fluid_ai.ocr import BaseOCR
 from fluid_ai.ui.detection import BaseUiDetector
 from multiprocessing.managers import SyncManager
@@ -35,7 +35,7 @@ def label_icons(
     elements: List[UiElement],
     module: Any,
 ) -> List[UiElement]:
-    assert isinstance(module, BaseIconLabeller)
+    assert isinstance(module, BaseIconLabeler)
     module.process(elements)
     return elements
 
@@ -45,7 +45,7 @@ class PipelineManager:
 
     detector_worker: Worker
     text_recognizer_worker: Worker
-    icon_labeller_worker: Worker
+    icon_labeler_worker: Worker
 
     _helper: PipelineManagerHelper
 
@@ -92,13 +92,13 @@ class PipelineManager:
             logger,
             PipelineModule.TEXT_RECOGNIZER,
         )
-        self.icon_labeller_worker = Worker(
+        self.icon_labeler_worker = Worker(
             label_icons,
-            self.pipeline.modules[PipelineModule.ICON_LABELLER],
-            self._helper.icon_labeller_ch,
-            self._helper.icon_labeller_pool,
+            self.pipeline.modules[PipelineModule.ICON_LABELER],
+            self._helper.icon_labeler_ch,
+            self._helper.icon_labeler_pool,
             logger,
-            PipelineModule.ICON_LABELLER,
+            PipelineModule.ICON_LABELER,
         )
 
         self.log_listener.start()
@@ -106,7 +106,7 @@ class PipelineManager:
             self.benchmark_listener.start()
         self.detector_worker.start()
         self.text_recognizer_worker.start()
-        self.icon_labeller_worker.start()
+        self.icon_labeler_worker.start()
 
     def get_helper(self) -> PipelineHelper:
         return self._helper.get_helper()
@@ -117,7 +117,7 @@ class PipelineManager:
         workers = (
             self.detector_worker,
             self.text_recognizer_worker,
-            self.icon_labeller_worker,
+            self.icon_labeler_worker,
             self.log_listener,
         )
         for worker in workers:

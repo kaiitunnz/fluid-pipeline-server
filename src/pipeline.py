@@ -5,7 +5,7 @@ from typing import List, Optional
 import numpy as np
 
 from fluid_ai.base import UiDetectionModule, UiElement
-from fluid_ai.icon import BaseIconLabeller
+from fluid_ai.icon import BaseIconLabeler
 from fluid_ai.ocr import BaseOCR
 from fluid_ai.ui.detection import BaseUiDetector
 from fluid_ai.ui.filter import BaseUiFilter
@@ -23,7 +23,7 @@ class PipelineModule(Enum):
     FILTER = "filter"
     MATCHER = "matcher"
     TEXT_RECOGNIZER = "text_recognizer"
-    ICON_LABELLER = "icon_labeller"
+    ICON_LABELER = "icon_labeler"
 
     @staticmethod
     def detect(
@@ -76,6 +76,6 @@ class PipelineModule(Enum):
         elements: List[UiElement],
         module: UiDetectionModule,
     ) -> List[UiElement]:
-        assert isinstance(module, BaseIconLabeller)
+        assert isinstance(module, BaseIconLabeler)
         module(elements)
         return elements

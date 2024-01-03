@@ -85,7 +85,7 @@ def _handle_connection(
         helper.log_debug(addr, "Extracting UI info.")
         if helper.benchmarker is None:
             helper.send(PipelineModule.TEXT_RECOGNIZER, text_elems)
-            helper.send(PipelineModule.ICON_LABELLER, icon_elems)
+            helper.send(PipelineModule.ICON_LABELER, icon_elems)
             results.extend(helper.wait_result())
             results.extend(helper.wait_result())
         else:
@@ -94,7 +94,7 @@ def _handle_connection(
             results.extend(helper.wait_result())
             text_time = time.time() - text_start  # bench
             icon_start = time.time()  # bench
-            helper.send(PipelineModule.ICON_LABELLER, icon_elems)
+            helper.send(PipelineModule.ICON_LABELER, icon_elems)
             results.extend(helper.wait_result())
             icon_time = time.time() - icon_start  # bench
 
@@ -230,7 +230,7 @@ class PipelineServer(PipelineServerInterface):
 
             # Extract UI info.
             helper.sendi(PipelineModule.TEXT_RECOGNIZER, i, text_elems)
-            helper.sendi(PipelineModule.ICON_LABELLER, i, icon_elems)
+            helper.sendi(PipelineModule.ICON_LABELER, i, icon_elems)
             helper.wait_result()
             helper.wait_result()
 

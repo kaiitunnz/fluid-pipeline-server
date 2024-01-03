@@ -218,17 +218,17 @@ class _HandlerHelper:
             self.helper.log_debug(addr, "Extracting UI info.")
             if self.helper.benchmarker is None:
                 self.helper.send(PipelineModule.TEXT_RECOGNIZER, job_no, text_elems)
-                self.helper.send(PipelineModule.ICON_LABELLER, job_no, icon_elems)
+                self.helper.send(PipelineModule.ICON_LABELER, job_no, icon_elems)
                 results.extend(self.helper.wait(PipelineModule.TEXT_RECOGNIZER))
-                results.extend(self.helper.wait(PipelineModule.ICON_LABELLER))
+                results.extend(self.helper.wait(PipelineModule.ICON_LABELER))
             else:
                 text_start = time.time()  # bench
                 self.helper.send(PipelineModule.TEXT_RECOGNIZER, job_no, text_elems)
                 results.extend(self.helper.wait(PipelineModule.TEXT_RECOGNIZER))
                 text_time = time.time() - text_start  # bench
                 icon_start = time.time()  # bench
-                self.helper.send(PipelineModule.ICON_LABELLER, job_no, icon_elems)
-                results.extend(self.helper.wait(PipelineModule.ICON_LABELLER))
+                self.helper.send(PipelineModule.ICON_LABELER, job_no, icon_elems)
+                results.extend(self.helper.wait(PipelineModule.ICON_LABELER))
                 icon_time = time.time() - icon_start  # bench
 
             processing_time = time.time() - detection_start  # bench
@@ -424,14 +424,14 @@ class ConnectionHandler:
 
         # Extract UI info.
         helper.send(PipelineModule.TEXT_RECOGNIZER, job_no, text_elems)
-        helper.send(PipelineModule.ICON_LABELLER, job_no, icon_elems)
+        helper.send(PipelineModule.ICON_LABELER, job_no, icon_elems)
         helper.wait(PipelineModule.TEXT_RECOGNIZER)
-        helper.wait(PipelineModule.ICON_LABELLER)
+        helper.wait(PipelineModule.ICON_LABELER)
         self.logger.debug(
             f"[{self.get_name()}] ({PipelineModule.TEXT_RECOGNIZER.value}) PASSED."
         )
         self.logger.debug(
-            f"[{self.get_name()}] ({PipelineModule.ICON_LABELLER.value}) PASSED."
+            f"[{self.get_name()}] ({PipelineModule.ICON_LABELER.value}) PASSED."
         )
 
         if success:

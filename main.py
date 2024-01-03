@@ -8,7 +8,7 @@ import torch
 
 sys.path.append(os.path.abspath(".."))
 
-from fluid_ai.icon import BaseIconLabeller, ClassifierIconLabeller, DummyIconLabeller
+from fluid_ai.icon import BaseIconLabeler, ClassifierIconLabeler, DummyIconLabeler
 from fluid_ai.ocr import BaseOCR, DummyOCR, EasyOCR
 from fluid_ai.pipeline import UiDetectionPipeline
 from fluid_ai.ui.detection import YoloUiDetector
@@ -91,14 +91,14 @@ def pipeline_from_config(config: Dict[str, Any]) -> UiDetectionPipeline:
     else:
         text_recognizer = EasyOCR(batch_size=config["text_recognizer"]["batch_size"])
 
-    icon_labeller: BaseIconLabeller
-    if config["icon_labeller"]["dummy"]:
-        icon_labeller = DummyIconLabeller()
+    icon_labeler: BaseIconLabeler
+    if config["icon_labeler"]["dummy"]:
+        icon_labeler = DummyIconLabeler()
     else:
-        icon_labeller = ClassifierIconLabeller(
-            config["icon_labeller"]["path"],
+        icon_labeler = ClassifierIconLabeler(
+            config["icon_labeler"]["path"],
             batched=True,
-            device=torch.device(config["icon_labeller"]["device"]),
+            device=torch.device(config["icon_labeler"]["device"]),
         )
 
     return UiDetectionPipeline(
@@ -107,7 +107,7 @@ def pipeline_from_config(config: Dict[str, Any]) -> UiDetectionPipeline:
         matcher,
         text_recognizer,
         config["special_elements"]["text"],
-        icon_labeller,
+        icon_labeler,
         config["special_elements"]["icon"],
     )
 
@@ -159,14 +159,14 @@ def constructor_from_config(config: Dict[str, Any]) -> PipelineConstructor:
             EasyOCR, batch_size=config["text_recognizer"]["batch_size"]
         )
 
-    if config["icon_labeller"]["dummy"]:
-        icon_labeller = ModuleConstructor(DummyIconLabeller)
+    if config["icon_labeler"]["dummy"]:
+        icon_labeler = ModuleConstructor(DummyIconLabeler)
     else:
-        icon_labeller = ModuleConstructor(
-            ClassifierIconLabeller,
-            config["icon_labeller"]["path"],
+        icon_labeler = ModuleConstructor(
+            ClassifierIconLabeler,
+            config["icon_labeler"]["path"],
             batched=True,
-            device=torch.device(config["icon_labeller"]["device"]),
+            device=torch.device(config["icon_labeler"]["device"]),
         )
 
     return PipelineConstructor(
@@ -174,7 +174,7 @@ def constructor_from_config(config: Dict[str, Any]) -> PipelineConstructor:
         filter,
         matcher,
         text_recognizer,
-        icon_labeller,
+        icon_labeler,
         config["special_elements"]["text"],
         config["special_elements"]["icon"],
         test_mode=config["test_mode"],

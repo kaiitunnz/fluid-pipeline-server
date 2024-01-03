@@ -1,5 +1,5 @@
 import os
-from PIL import Image
+from PIL import Image  # type: ignore
 from queue import Queue
 from typing import Callable, List, Optional, Tuple
 
@@ -20,11 +20,11 @@ class PipelineManagerHelper:
 
     detector_ch: Queue
     text_recognizer_ch: Queue
-    icon_labeller_ch: Queue
+    icon_labeler_ch: Queue
 
     detector_pool: DictProxy
     text_recognizer_pool: DictProxy
-    icon_labeller_pool: DictProxy
+    icon_labeler_pool: DictProxy
 
     textual_elements: List[str]
     icon_elements: List[str]
@@ -45,11 +45,11 @@ class PipelineManagerHelper:
 
         self.detector_ch = manager.Queue()
         self.text_recognizer_ch = manager.Queue()
-        self.icon_labeller_ch = manager.Queue()
+        self.icon_labeler_ch = manager.Queue()
 
         self.detector_pool = manager.dict()
         self.text_recognizer_pool = manager.dict()
-        self.icon_labeller_pool = manager.dict()
+        self.icon_labeler_pool = manager.dict()
 
         self.textual_elements = pipeline.textual_elements
         self.icon_elements = pipeline.icon_elements
@@ -68,10 +68,10 @@ class PipelineManagerHelper:
             key,
             self.detector_ch,
             self.text_recognizer_ch,
-            self.icon_labeller_ch,
+            self.icon_labeler_ch,
             self.detector_pool,
             self.text_recognizer_pool,
-            self.icon_labeller_pool,
+            self.icon_labeler_pool,
             self.textual_elements,
             self.icon_elements,
             self.log_listener.get_logger(),
@@ -89,11 +89,11 @@ class PipelineHelper:
     key: int
     detector_ch: Queue
     text_recognizer_ch: Queue
-    icon_labeller_ch: Queue
+    icon_labeler_ch: Queue
 
     detector_pool: DictProxy
     text_recognizer_pool: DictProxy
-    icon_labeller_pool: DictProxy
+    icon_labeler_pool: DictProxy
 
     textual_elements: List[str]
     icon_elements: List[str]
@@ -109,10 +109,10 @@ class PipelineHelper:
         key: int,
         detector_ch: Queue,
         text_recognizer_ch: Queue,
-        icon_labeller_ch: Queue,
+        icon_labeler_ch: Queue,
         detector_pool: DictProxy,
         text_recognizer_pool: DictProxy,
-        icon_labeller_pool: DictProxy,
+        icon_labeler_pool: DictProxy,
         textual_elements: List[str],
         icon_elements: List[str],
         logger: Logger,
@@ -123,10 +123,10 @@ class PipelineHelper:
         self.key = key
         self.detector_ch = detector_ch
         self.text_recognizer_ch = text_recognizer_ch
-        self.icon_labeller_ch = icon_labeller_ch
+        self.icon_labeler_ch = icon_labeler_ch
         self.detector_pool = detector_pool
         self.text_recognizer_pool = text_recognizer_pool
-        self.icon_labeller_pool = icon_labeller_pool
+        self.icon_labeler_pool = icon_labeler_pool
         self.textual_elements = textual_elements
         self.icon_elements = icon_elements
         self.logger = logger
@@ -155,14 +155,14 @@ class PipelineHelper:
             return self.text_recognizer_pool.pop(self.key)
 
     def label_icons(self, elements: List[UiElement]):
-        self.icon_labeller_ch.put((self.key, self.condition, (elements,)))
+        self.icon_labeler_ch.put((self.key, self.condition, (elements,)))
 
     def wait_label_icons(self) -> List[UiElement]:
         with self.condition:
             self.condition.wait_for(
-                lambda: self.icon_labeller_pool.get(self.key, None) is not None
+                lambda: self.icon_labeler_pool.get(self.key, None) is not None
             )
-            return self.icon_labeller_pool.pop(self.key)
+            return self.icon_labeler_pool.pop(self.key)
 
     def save_image(self, img: Image.Image, save_dir: str, prefix: str = "img"):
         img.save(os.path.join(save_dir, f"{prefix}{self.key}.jpg"))

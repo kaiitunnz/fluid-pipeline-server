@@ -41,7 +41,7 @@ class PipelineConstructor:
         filter: ModuleConstructor,
         matcher: ModuleConstructor,
         text_recognizer: ModuleConstructor,
-        icon_labeller: ModuleConstructor,
+        icon_labeler: ModuleConstructor,
         textual_elements: List[str],
         icon_elements: List[str],
         test_mode: bool = False,
@@ -53,13 +53,13 @@ class PipelineConstructor:
             matcher.func = PipelineModule.match
         filter.func = PipelineModule.do_filter
         text_recognizer.func = PipelineModule.recognize_texts
-        icon_labeller.func = PipelineModule.label_icons
+        icon_labeler.func = PipelineModule.label_icons
         self.modules = {
             PipelineModule.DETECTOR: detector,
             PipelineModule.FILTER: filter,
             PipelineModule.MATCHER: matcher,
             PipelineModule.TEXT_RECOGNIZER: text_recognizer,
-            PipelineModule.ICON_LABELLER: icon_labeller,
+            PipelineModule.ICON_LABELER: icon_labeler,
         }
         self.textual_elements = textual_elements
         self.icon_elements = icon_elements

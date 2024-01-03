@@ -31,7 +31,7 @@
     "dummy": true,
     "batch_size": 1
   },
-  "icon_labeller": {
+  "icon_labeler": {
     "dummy": true,
     "path": "/media/test/noppanat/models/efficientnet_op_cpu_migrated.pt",
     "device": "cuda:0"
