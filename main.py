@@ -95,11 +95,7 @@ def pipeline_from_config(config: Dict[str, Any]) -> UiDetectionPipeline:
     if config["icon_labeler"]["dummy"]:
         icon_labeler = DummyIconLabeler()
     else:
-        icon_labeler = ClassifierIconLabeler(
-            config["icon_labeler"]["path"],
-            batched=True,
-            device=torch.device(config["icon_labeler"]["device"]),
-        )
+        icon_labeler = ClassifierIconLabeler(**config["icon_labeler"]["args"])
 
     return UiDetectionPipeline(
         detector,
@@ -164,9 +160,7 @@ def constructor_from_config(config: Dict[str, Any]) -> PipelineConstructor:
     else:
         icon_labeler = ModuleConstructor(
             ClassifierIconLabeler,
-            config["icon_labeler"]["path"],
-            batched=True,
-            device=torch.device(config["icon_labeler"]["device"]),
+            **config["icon_labeler"]["args"],
         )
 
     return PipelineConstructor(

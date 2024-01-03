@@ -33,8 +33,11 @@
   },
   "icon_labeler": {
     "dummy": true,
-    "path": "/media/test/noppanat/models/efficientnet_op_cpu_migrated.pt",
-    "device": "cuda:0"
+    "args": {
+      "model_path": "/media/test/noppanat/models/efficientnet_op_cpu_migrated.pt",
+      "batch_size": 32,
+      "device": "cuda:0"
+    }
   },
   "special_elements": {
     "text": ["TEXT", "LABEL", "TEXT_INPUT", "BUTTON", "SPINNER"],
