@@ -146,11 +146,9 @@ def test_server(
     process.join()
 
     if success:
-        print(f"OK", flush=True)
+        print("OK\n", flush=True)
     else:
-        print(f"FAILED", flush=True)
-
-    print(flush=True)
+        print("FAILED\n", flush=True)
 
     return success
 
