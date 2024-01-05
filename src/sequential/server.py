@@ -23,6 +23,18 @@ DEFAULT_BENCHMARK_FILE = "benchmark.csv"
 
 
 def _process(args: UiDetectionArgs) -> bytes:
+    """Performs the UI detection process with a sequential pipeline
+
+    Parameters
+    ----------
+    args : UiDetectionArgs
+        Arguments. See `UiDetectionArgs` for more details.
+
+    Returns
+    -------
+    bytes
+        Result of the process, serialized into UTF-8-encoded JSON format.
+    """
     helper, _, waiting_time, addr, screenshot_img, base_elements, _ = args
     assert isinstance(helper, PipelineHelper)
 
@@ -49,12 +61,12 @@ def _process(args: UiDetectionArgs) -> bytes:
 
 class PipelineServer(IPipelineServer):
     """
-    UI detection pipeline server with multithreading.
+    UI detection pipeline server with a sequential pipeline.
 
     It utilizes multithreading to handle client connections concurrently. It initializes
-    exactly one instance of the UI detection pipeline, each of whose components are
-    executing in separate threads. Threads communicate via channels to send data
-    to be processed and receive the results.
+    exactly one instance of the UI detection pipeline, which executes on a single
+    worker thread. Threads communicate via channels to send data to be processed
+    and receive the results.
 
     Attributes
     ----------
