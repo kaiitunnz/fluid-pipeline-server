@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 
 import torch
 
-sys.path.append(os.path.abspath(".."))
+sys.path.append(os.environ["FLUID_AI_PATH"])
 
 from fluid_ai.icon import BaseIconLabeler, ClassifierIconLabeler, DummyIconLabeler
 from fluid_ai.ocr import BaseOCR, DummyOCR, EasyOCR
@@ -175,50 +175,58 @@ def constructor_from_config(config: Dict[str, Any]) -> PipelineConstructor:
     )
 
 
-def main(args: Namespace):
-    with open("config.json", "r") as f:
-        config = json.load(f)
-    sample_file = config["server"].pop("sample_file")
-    pipeline_server: IPipelineServer
-    if args.mode == "sequential":
+def init_pipeline_server(
+    config: Dict[str, Any], mode: str, verbose: bool, benchmark: Optional[str]
+) -> IPipelineServer:
+    if mode == "sequential":
         pipeline = pipeline_from_config(config)
         pipeline_server = SequentialServer(
             **config["server"],
             pipeline=pipeline,
-            verbose=args.verbose,
-            benchmark=args.benchmark is not None,
-            benchmark_file=args.benchmark,
+            verbose=verbose,
+            benchmark=benchmark is not None,
+            benchmark_file=benchmark,
             test_mode=config["test_mode"],
         )
-    elif args.mode == "multithread":
+    elif mode == "multithread":
         constructor = constructor_from_config(config)
         pipeline_server = MultithreadServer(
             **config["server"],
             pipeline=constructor,
-            verbose=args.verbose,
-            benchmark=args.benchmark is not None,
-            benchmark_file=args.benchmark,
+            verbose=verbose,
+            benchmark=benchmark is not None,
+            benchmark_file=benchmark,
         )
-    elif args.mode == "multiprocess":
+    elif mode == "multiprocess":
         constructor = constructor_from_config(config)
         pipeline_server = MultiprocessServer(
             **config["server"],
             pipeline=constructor,
-            verbose=args.verbose,
-            benchmark=args.benchmark is not None,
-            benchmark_file=args.benchmark,
+            verbose=verbose,
+            benchmark=benchmark is not None,
+            benchmark_file=benchmark,
         )
-    elif args.mode == "hybrid":
+    elif mode == "hybrid":
         constructor = constructor_from_config(config)
         pipeline_server = HybridServer(
             **config["server"],
             pipeline=constructor,
-            verbose=args.verbose,
-            benchmark=args.benchmark is not None,
-            benchmark_file=args.benchmark,
+            verbose=verbose,
+            benchmark=benchmark is not None,
+            benchmark_file=benchmark,
         )
     else:
         raise NotImplementedError()
+    return pipeline_server
+
+
+def main(args: Namespace):
+    with open("config.json", "r") as f:
+        config = json.load(f)
+    sample_file = config["server"].pop("sample_file")
+    pipeline_server = init_pipeline_server(
+        config, args.mode, args.verbose, args.benchmark
+    )
     pipeline_server.start(sample_file)
 
 

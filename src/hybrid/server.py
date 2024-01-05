@@ -1,9 +1,6 @@
-import logging
 import multiprocessing as mp
 import os
 import signal
-import socket as sock
-import sys
 import time
 from PIL import ImageFile  # typing: ignore
 from threading import Semaphore
@@ -11,6 +8,7 @@ from typing import List, Optional
 
 from src.benchmark import BENCHMARK_METRICS, Benchmarker
 from src.constructor import PipelineConstructor
+from src.logger import DefaultLogger
 from src.hybrid.benchmark import BenchmarkListener
 from src.hybrid.handler import ConnectionHandler
 from src.hybrid.logger import LogListener
@@ -37,6 +35,8 @@ class PipelineServer(IPipelineServer):
         Host name.
     port : str
         Port to listen to client connections.
+    socket : Optional[sock.socket]
+        Server socket.
     pipeline: PipelineConstructor
         Constructor of the UI detection pipeline.
     chunk_size : int
@@ -45,11 +45,9 @@ class PipelineServer(IPipelineServer):
         Maximum size of an image from the client.
     num_workers : int
         Number of worker threads in each connection handler process.
-    socket : Optional[sock.socket]
-        Server socket.
     verbose : bool
         Whether to log server events verbosely.
-    logger : logging.Logger
+    logger : Logger
         Logger to log server events.
     benchmarker : Optional[Benchmarker]
         Benchmarker for benchmarking the server.
@@ -57,15 +55,12 @@ class PipelineServer(IPipelineServer):
         Connection handlers, each representing a connection handler process.
     """
 
-    hostname: str
-    port: str
     pipeline: PipelineConstructor
     chunk_size: int
     max_image_size: int
     num_workers: int
-    socket: Optional[sock.socket]
     verbose: bool
-    logger: logging.Logger
+    logger: DefaultLogger
     benchmarker: Optional[Benchmarker]
 
     handlers: List[ConnectionHandler]
@@ -111,16 +106,15 @@ class PipelineServer(IPipelineServer):
         benchmark_file : Optional[str]
             Path to the file to save the benchmark results.
         """
-        self.hostname = hostname
-        self.port = port
+        super().__init__(
+            hostname, port, None, DefaultLogger(PipelineServer._init_logger(verbose))
+        )
         self.pipeline = pipeline
         self.chunk_size = chunk_size
         self.max_image_size = max_image_size
         self.num_workers = num_workers
-        self.socket = None
         self.num_instances = num_instances
         self.verbose = verbose
-        self.logger = self._init_logger(verbose)
         self.handlers = []
 
         self.benchmarker = (
@@ -184,12 +178,7 @@ class PipelineServer(IPipelineServer):
                 self.logger.error("Failed to start the pipeline server.")
                 os.kill(os.getpid(), signal.SIGTERM)
 
-        self.socket = sock.socket(sock.AF_INET, sock.SOCK_STREAM)
-        self.socket.bind((self.hostname, self.port))
-        self.socket.listen(1)
-        self.logger.info(
-            f'Pipeline server started serving at "{self.hostname}:{self.port} (PID={os.getpid()})".'
-        )
+        self.socket = self.bind()
 
         job_no = 0
         while True:
@@ -227,7 +216,7 @@ class PipelineServer(IPipelineServer):
             if benchmark_listener is not None:
                 benchmark_listener.terminate(True)
             self.logger.info("Server exited successfully.")
-            sys.exit(0)
+            self.exit(0)
 
         for sig in term_signals:
             signal.signal(sig, _exit)

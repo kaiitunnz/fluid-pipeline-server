@@ -1,9 +1,9 @@
-import logging
 from queue import Queue
 from threading import Thread
 from typing import Any, List
 
 import src.benchmark as bench
+from src.logger import DefaultLogger
 
 
 class Benchmarker(bench.IBenchmarker):
@@ -44,7 +44,7 @@ class BenchmarkListener:
 
     benchmarker: bench.Benchmarker
     channel: Queue
-    logger: logging.Logger
+    logger: DefaultLogger
     name: str
     _benchmarker: Benchmarker
     _thread: Thread
@@ -53,7 +53,7 @@ class BenchmarkListener:
         self,
         benchmarker: bench.Benchmarker,
         channel: Queue,
-        logger: logging.Logger,
+        logger: DefaultLogger,
         name: str = "benchmark_listener",
     ):
         """

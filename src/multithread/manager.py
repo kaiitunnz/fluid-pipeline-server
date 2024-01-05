@@ -2,8 +2,8 @@ from typing import Optional
 
 from src.benchmark import Benchmarker
 from src.constructor import PipelineConstructor
+from src.logger import DefaultLogger
 from src.multithread.helper import PipelineHelper, PipelineManagerHelper, WarmupHelper
-from src.multithread.logger import Logger
 
 
 class PipelineManager:
@@ -25,12 +25,12 @@ class PipelineManager:
 
     pipeline: PipelineConstructor
     helper: PipelineManagerHelper
-    logger: Logger
+    logger: DefaultLogger
 
     def __init__(
         self,
         pipeline: PipelineConstructor,
-        logger: Logger,
+        logger: DefaultLogger,
         benchmarker: Optional[Benchmarker],
         num_instances: int,
     ):

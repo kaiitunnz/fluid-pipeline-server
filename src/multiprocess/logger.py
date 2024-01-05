@@ -1,8 +1,7 @@
-import logging
 from queue import Queue
 from threading import Thread
 
-from src.logger import ILogger
+from src.logger import DefaultLogger, ILogger
 
 
 class Logger(ILogger):
@@ -35,7 +34,7 @@ class LogListener:
 
     Attributes
     ----------
-    logger : logging.Logger
+    logger : DefaultLogger
         Actual logger.
     channel : Queue
         Channel on which the logging thread listens.
@@ -43,19 +42,19 @@ class LogListener:
         Name of the instance, used to identify itself in the server log.
     """
 
-    logger: logging.Logger
+    logger: DefaultLogger
     channel: Queue
     name: str
     _thread: Thread
     _logger: Logger
 
     def __init__(
-        self, logger: logging.Logger, channel: Queue, name: str = "log_listener"
+        self, logger: DefaultLogger, channel: Queue, name: str = "log_listener"
     ):
         """
         Parameters
         ----------
-        logger : logging.Logger
+        logger : DefaultLogger
             Actual logger.
         channel : Queue
             Channel on which the logging thread listens.

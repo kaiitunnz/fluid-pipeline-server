@@ -1,10 +1,10 @@
-import logging
 from typing import Dict, Optional
 
 from multiprocessing.managers import SyncManager
 
 import src.benchmark as bench
 from src.constructor import ModuleConstructor, PipelineConstructor
+from src.logger import DefaultLogger as DefaultLogger
 from src.multiprocess.benchmark import BenchmarkListener
 from src.multiprocess.helper import PipelineHelper, PipelineManagerHelper
 from src.multiprocess.logger import LogListener, Logger
@@ -27,7 +27,7 @@ class PipelineManager:
         Mapping from pipeline module names to the corresponding pipeline workers.
     log_listener: LogListener
         Listener of logging events.
-    logger : Logger
+    logger : DefaultLogger
         Logger to log the UI detection process.
     benchmark_listener : Optional[BenchmarkListener]
         Listener of benchmarking events.
@@ -39,7 +39,7 @@ class PipelineManager:
     _helper: PipelineManagerHelper
 
     log_listener: LogListener
-    logger: logging.Logger
+    logger: DefaultLogger
 
     benchmark_listener: Optional[BenchmarkListener]
 
@@ -47,7 +47,7 @@ class PipelineManager:
         self,
         pipeline: PipelineConstructor,
         manager: SyncManager,
-        logger: logging.Logger,
+        logger: DefaultLogger,
         benchmarker: Optional[bench.Benchmarker],
     ):
         """
@@ -57,7 +57,7 @@ class PipelineManager:
             Constructor of the UI detection pipeline.
         manager : SyncManager
             Shared resource manager.
-        logger : Logger
+        logger : DefaultLogger
             Logger to log the UI detection process.
         benchmark_listener : Optional[BenchmarkListener]
             Benchmarker to benchmark the UI detection pipeline server. `None` to not

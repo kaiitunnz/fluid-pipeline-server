@@ -2,7 +2,7 @@ import threading
 from queue import SimpleQueue
 from typing import Any, Callable, Optional
 
-from src.sequential.logger import Logger
+from src.logger import DefaultLogger
 
 
 class Worker:
@@ -31,7 +31,7 @@ class Worker:
     channel: SimpleQueue
     name: Optional[str]
     module: Any
-    logger: Logger
+    logger: DefaultLogger
     thread: Optional[threading.Thread] = None
 
     def __init__(
@@ -39,7 +39,7 @@ class Worker:
         func: Callable,
         channel: SimpleQueue,
         module: Any,
-        logger: Logger,
+        logger: DefaultLogger,
         name: Optional[str] = None,
     ):
         """

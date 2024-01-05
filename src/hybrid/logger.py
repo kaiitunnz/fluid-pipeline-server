@@ -1,8 +1,8 @@
-import logging
 from multiprocessing.queues import SimpleQueue
 from threading import Thread
 
 from src.logger import ILogger
+from src.logger import DefaultLogger
 
 
 class Logger(ILogger):
@@ -35,7 +35,7 @@ class LogListener:
 
     Attributes
     ----------
-    logger : logging.Logger
+    logger : DefaultLogger
         Actual logger.
     channel : SimpleQueue
         Channel on which the logging thread listens.
@@ -43,19 +43,19 @@ class LogListener:
         Name of the instance, used to identify itself in the server log.
     """
 
-    logger: logging.Logger
+    logger: DefaultLogger
     channel: SimpleQueue
     name: str
     _thread: Thread
     _logger: Logger
 
     def __init__(
-        self, logger: logging.Logger, channel: SimpleQueue, name: str = "log_listener"
+        self, logger: DefaultLogger, channel: SimpleQueue, name: str = "log_listener"
     ):
         """
         Parameters
         ----------
-        logger : logging.Logger
+        logger : DefaultLogger
             Actual logger.
         channel : SimpleQueue
             Channel on which the logging thread listens.

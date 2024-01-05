@@ -1,4 +1,7 @@
 import logging
+import os
+import socket as sock
+import sys
 from abc import abstractmethod
 from enum import Enum
 from typing import List, Optional
@@ -11,6 +14,8 @@ from fluid_ai.ocr import BaseOCR
 from fluid_ai.ui.detection import BaseUiDetector
 from fluid_ai.ui.filter import BaseUiFilter
 from fluid_ai.ui.matching import BaseUiMatching
+
+from src.logger import ILogger
 
 
 class PipelineModule(Enum):
@@ -203,12 +208,54 @@ class PipelineModule(Enum):
 class IPipelineServer:
     """
     An interface of a UI detection pipeline server.
+
+    hostname : str
+        Host name.
+    port : str
+        Port to listen to client connections.
+    socket : Optional[sock.socket]
+        Server socket.
+    logger : ILogger
+        Logger to log the UI detection process.
     """
+
+    hostname: str
+    port: str
+    socket: Optional[sock.socket]
+    logger: ILogger
+
+    def __init__(
+        self, hostname: str, port: str, socket: Optional[sock.socket], logger: ILogger
+    ):
+        self.hostname = hostname
+        self.port = port
+        self.socket = socket
+        self.logger = logger
 
     @abstractmethod
     def start(self, _):
         """Starts the server"""
         raise NotImplementedError()
+
+    def on_ready(self):
+        pass
+
+    def on_failure(self):
+        pass
+
+    def bind(self) -> sock.socket:
+        socket = sock.socket(sock.AF_INET, sock.SOCK_STREAM)
+        socket.bind((self.hostname, self.port))
+        socket.listen(1)
+        self.logger.info(
+            f'Pipeline server started serving at "{self.hostname}:{self.port} (PID={os.getpid()})".'
+        )
+        self.on_ready()
+        return socket
+
+    def exit(self, code: int):
+        self.on_failure()
+        sys.exit(code)
 
     @classmethod
     def _init_logger(cls, verbose: bool = True) -> logging.Logger:

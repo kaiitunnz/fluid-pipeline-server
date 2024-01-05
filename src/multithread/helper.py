@@ -6,8 +6,8 @@ from fluid_ai.base import UiElement
 from src.benchmark import Benchmarker
 from src.constructor import ModuleConstructor, PipelineConstructor
 from src.helper import IPipelineHelper
+from src.logger import DefaultLogger
 from src.multithread.loadbalancer import LoadBalancer
-from src.multithread.logger import Logger
 from src.multithread.worker import Worker
 from src.pipeline import PipelineModule
 
@@ -40,7 +40,7 @@ class PipelineManagerHelper:
     textual_elements: List[str]
     icon_elements: List[str]
 
-    logger: Logger
+    logger: DefaultLogger
     benchmarker: Optional[Benchmarker]
 
     num_instances: int
@@ -49,7 +49,7 @@ class PipelineManagerHelper:
     def __init__(
         self,
         constructor: PipelineConstructor,
-        logger: Logger,
+        logger: DefaultLogger,
         benchmarker: Optional[Benchmarker],
         num_instances: int,
     ):
@@ -177,7 +177,7 @@ class PipelineHelper(IPipelineHelper):
         channels: Dict[PipelineModule, LoadBalancer],
         textual_elements: List[str],
         icon_elements: List[str],
-        logger: Logger,
+        logger: DefaultLogger,
         benchmarker: Optional[Benchmarker],
     ):
         """

@@ -1,4 +1,3 @@
-import logging
 from queue import SimpleQueue
 from typing import Any, List, Optional
 
@@ -7,8 +6,8 @@ from fluid_ai.base import UiElement
 from fluid_ai.pipeline import UiDetectionPipeline
 
 from src.benchmark import Benchmarker
+from src.logger import DefaultLogger
 from src.sequential.helper import PipelineHelper
-from src.sequential.logger import Logger
 from src.sequential.worker import Worker
 
 
@@ -61,14 +60,14 @@ class PipelineManager:
     pipeline: UiDetectionPipeline
     pipeline_ch: SimpleQueue
     worker: Worker
-    logger: Logger
+    logger: DefaultLogger
     benchmarker: Optional[Benchmarker]
     name: str
 
     def __init__(
         self,
         pipeline: UiDetectionPipeline,
-        logger: logging.Logger,
+        logger: DefaultLogger,
         benchmarker: Optional[Benchmarker],
         name: str = "Pipeline",
     ):
@@ -86,7 +85,7 @@ class PipelineManager:
         """
         self.pipeline = pipeline
         self.pipeline_ch = SimpleQueue()
-        self.logger = Logger(logger)
+        self.logger = logger
         self.benchmarker = benchmarker
         self.name = name
 

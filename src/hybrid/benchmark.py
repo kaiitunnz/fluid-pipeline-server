@@ -1,9 +1,9 @@
-import logging
 from multiprocessing.queues import SimpleQueue
 from threading import Thread
 from typing import Any, List
 
 import src.benchmark as bench
+from src.logger import DefaultLogger
 
 
 class Benchmarker(bench.IBenchmarker):
@@ -44,7 +44,7 @@ class BenchmarkListener:
         Benchmarker.
     channel : SimpleQueue
         Channel on which it listens for benchmarking events.
-    logger : Logger
+    logger : DefaultLogger
         Logger for logging the benchmark process to the server log.
     name : str
         Name to identify a `BenchmarkListener` object.
@@ -52,7 +52,7 @@ class BenchmarkListener:
 
     benchmarker: bench.Benchmarker
     channel: SimpleQueue
-    logger: logging.Logger
+    logger: DefaultLogger
     name: str
     _benchmarker: Benchmarker
     _thread: Thread
@@ -61,7 +61,7 @@ class BenchmarkListener:
         self,
         benchmarker: bench.Benchmarker,
         channel: SimpleQueue,
-        logger: logging.Logger,
+        logger: DefaultLogger,
         name: str = "benchmark_listener",
     ):
         """
