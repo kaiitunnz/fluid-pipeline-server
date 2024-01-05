@@ -1,0 +1,72 @@
+[
+  {
+    "class": "android.view.View",
+    "position": { "x_min": 0, "y_min": 0, "x_max": 1440, "y_max": 3040 },
+    "info": { "id": 1 }
+  },
+  {
+    "class": "android.widget.ScrollView",
+    "position": { "x_min": 0, "y_min": 0, "x_max": 1440, "y_max": 3040 },
+    "info": { "id": 2 }
+  },
+  {
+    "class": "android.widget.TextView",
+    "position": { "x_min": 48, "y_min": 2358, "x_max": 317, "y_max": 2631 },
+    "info": { "id": 3, "text": "Phone" }
+  },
+  {
+    "class": "android.widget.TextView",
+    "position": { "x_min": 317, "y_min": 2358, "x_max": 586, "y_max": 2631 },
+    "info": { "id": 4, "text": "Messages" }
+  },
+  {
+    "class": "android.widget.TextView",
+    "position": { "x_min": 586, "y_min": 2358, "x_max": 855, "y_max": 2631 },
+    "info": { "id": 5, "text": "Play Store" }
+  },
+  {
+    "class": "android.widget.TextView",
+    "position": { "x_min": 855, "y_min": 2358, "x_max": 1124, "y_max": 2631 },
+    "info": { "id": 6, "text": "Chrome" }
+  },
+  {
+    "class": "android.widget.TextView",
+    "position": { "x_min": 1124, "y_min": 2358, "x_max": 1392, "y_max": 2631 },
+    "info": { "id": 7, "text": "Camera" }
+  },
+  {
+    "class": "android.widget.FrameLayout",
+    "position": { "x_min": 73, "y_min": 2710, "x_max": 1366, "y_max": 2906 },
+    "info": { "id": 8 }
+  },
+  {
+    "class": "android.view.View",
+    "position": { "x_min": 689, "y_min": 2337, "x_max": 752, "y_max": 2358 },
+    "info": { "id": 9 }
+  },
+  {
+    "class": "android.widget.FrameLayout",
+    "position": { "x_min": 48, "y_min": 126, "x_max": 1392, "y_max": 564 },
+    "info": { "id": 10 }
+  },
+  {
+    "class": "android.widget.TextView",
+    "position": { "x_min": 1124, "y_min": 1440, "x_max": 1392, "y_max": 1878 },
+    "info": { "id": 11, "text": "Settings" }
+  },
+  {
+    "class": "android.view.View",
+    "position": { "x_min": 1160, "y_min": 2710, "x_max": 1356, "y_max": 2906 },
+    "info": { "id": 14 }
+  },
+  {
+    "class": "android.widget.TextView",
+    "position": { "x_min": 272, "y_min": 126, "x_max": 879, "y_max": 564 },
+    "info": { "id": 15, "text": "Friday, Nov 10" }
+  },
+  {
+    "class": "android.widget.TextView",
+    "position": { "x_min": 879, "y_min": 126, "x_max": 1168, "y_max": 564 },
+    "info": { "id": 16, "text": "2°C" }
+  }
+]
