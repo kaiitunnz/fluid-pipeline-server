@@ -1,9 +1,7 @@
 import logging
-import os
-from PIL import Image  # type: ignore
 from abc import abstractmethod
 from enum import Enum
-from typing import Callable, List, Optional, Tuple
+from typing import List, Optional
 
 import numpy as np
 
@@ -13,9 +11,6 @@ from fluid_ai.ocr import BaseOCR
 from fluid_ai.ui.detection import BaseUiDetector
 from fluid_ai.ui.filter import BaseUiFilter
 from fluid_ai.ui.matching import BaseUiMatching
-
-from src.benchmark import IBenchmarker
-from src.logger import ILogger
 
 
 class PipelineModule(Enum):
@@ -203,188 +198,6 @@ class PipelineModule(Enum):
         assert isinstance(module, BaseIconLabeler)
         module(elements)
         return elements
-
-
-class IPipelineHelper:
-    """
-    Helper for accessing the UI detection pipeline modules.
-
-    Attributes
-    ----------
-    logger : ILogger
-        Logger to log the UI detection process.
-    benchmarker : Optional[IBenchmarker]
-        Benchmarker to benchmark the UI detection pipeline server. `None` to not
-        benchmark the server.
-    textual_elements : List[str]
-        List of textual UI class names.
-    icon_elements : List[str]
-        List of icon UI class names.
-    """
-
-    logger: ILogger
-    benchmarker: Optional[IBenchmarker]
-    textual_elements: List[str]
-    icon_elements: List[str]
-
-    def __init__(
-        self,
-        logger: ILogger,
-        benchmarker: Optional[IBenchmarker],
-        textual_elements: List[str],
-        icon_elements: List[str],
-    ):
-        """
-        Attributes
-        ----------
-        logger : ILogger
-            Logger to log the UI detection process.
-        benchmarker : Optional[IBenchmarker]
-            Benchmarker to benchmark the UI detection pipeline server. `None` to not
-            benchmark the server.
-        textual_elements : List[str]
-            List of textual UI class names.
-        icon_elements : List[str]
-            List of icon UI class names.
-        """
-        self.logger = logger
-        self.benchmarker = benchmarker
-        self.textual_elements = textual_elements
-        self.icon_elements = icon_elements
-
-    @abstractmethod
-    def send(self, target: PipelineModule, *args):
-        """Sends data to the target UI detection pipeline module
-
-        It does not immediately return the result. Otherwise, `PipelineHelper.wait()`
-        must be called to retrieve the result.
-
-        Parameters
-        ----------
-        target : PipelineModule
-            Target UI detection pipeline module.
-        *args
-            Data to be sent to the module.
-        """
-        raise NotImplementedError()
-
-    @abstractmethod
-    def wait(self, target: PipelineModule) -> List[UiElement]:
-        """Waits and gets the result from the target UI detection pipeline module
-
-        This method must be called only after an associated call to the `PipelineHelper.send()`
-        method. Otherwise, it will block indefinitely.
-
-        Parameters
-        ----------
-        target : PipelineModule
-            Target UI detection pipeline module.
-
-        Returns
-        -------
-        List[UiElement]
-            Resulting list of UI elements returned from the module.
-        """
-        raise NotImplementedError()
-
-    @staticmethod
-    def save_image_i(img: Image.Image, i: int, save_dir: str, prefix: str = "img"):
-        """Saves an image with a filename containing `prefix` and `i`
-
-        Parameters
-        ----------
-        img : Image
-            The image to be saved.
-        i : int
-            Integer to be included in the file name.
-        save_dir : str
-            Path to the directory where the image will be saved.
-        prefix : str
-            File name's prefix. The saved file name will be `prefix` followed by `i`.
-        """
-        img.save(os.path.join(save_dir, f"{prefix}{i}.jpg"))
-
-    @staticmethod
-    def _log(log_func: Callable[[str], None], addr: Tuple[str, int], msg: str):
-        """Formats a message with the associated client's IP and port and logs it
-        with the given logging function
-
-        Parameters
-        ----------
-        log_func : Callable[[str], None]
-            Logging function that takes a string to be logged.
-        addr : Tuple[str, int]
-            `(IP address, port)` of the associated client.
-        msg : str
-            Actual message to be logged.
-        """
-        ip, port = addr
-        log_func(f"({ip}:{port}) {msg}")
-
-    def log_debug(self, addr: Tuple[str, int], msg: str):
-        """Formats a message with the associated client's IP and port and logs it in
-        the debug level
-
-        Parameters
-        ----------
-        addr : Tuple[str, int]
-            `(IP address, port)` of the associated client.
-        msg : str
-            Actual message to be logged.
-        """
-        self._log(self.logger.debug, addr, msg)
-
-    def log_info(self, addr: Tuple[str, int], msg: str):
-        """Formats a message with the associated client's IP and port and logs it in
-        the info level
-
-        Parameters
-        ----------
-        addr : Tuple[str, int]
-            `(IP address, port)` of the associated client.
-        msg : str
-            Actual message to be logged.
-        """
-        self._log(self.logger.info, addr, msg)
-
-    def log_warning(self, addr: Tuple[str, int], msg: str):
-        """Formats a message with the associated client's IP and port and logs it in
-        the warning level
-
-        Parameters
-        ----------
-        addr : Tuple[str, int]
-            `(IP address, port)` of the associated client.
-        msg : str
-            Actual message to be logged.
-        """
-        self._log(self.logger.warn, addr, msg)
-
-    def log_error(self, addr: Tuple[str, int], msg: str):
-        """Formats a message with the associated client's IP and port and logs it in
-        the error level
-
-        Parameters
-        ----------
-        addr : Tuple[str, int]
-            `(IP address, port)` of the associated client.
-        msg : str
-            Actual message to be logged.
-        """
-        self._log(self.logger.error, addr, msg)
-
-    def log_critical(self, addr: Tuple[str, int], msg: str):
-        """Formats a message with the associated client's IP and port and logs it in
-        the critical level
-
-        Parameters
-        ----------
-        addr : Tuple[str, int]
-            `(IP address, port)` of the associated client.
-        msg : str
-            Actual message to be logged.
-        """
-        self._log(self.logger.critical, addr, msg)
 
 
 class IPipelineServer:

@@ -10,11 +10,9 @@ from PIL import ImageFile  # type: ignore
 
 from src.benchmark import BENCHMARK_METRICS, Benchmarker
 from src.constructor import PipelineConstructor
-from src.multithread.helper import PipelineHelper
 from src.multithread.logger import Logger
 from src.multithread.manager import PipelineManager
 from src.pipeline import IPipelineServer
-from src.process import ui_detection_serve, ui_detection_warmup
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 DEFAULT_BENCHMARK_FILE = "benchmark.csv"
@@ -159,9 +157,8 @@ class PipelineServer(IPipelineServer):
                 self.logger.info(f'Got connection from "{addr[0]}:{addr[1]}"')
                 job_no += 1
                 pool.apply_async(
-                    ui_detection_serve,
+                    manager.get_helper().serve,
                     args=(
-                        manager.get_helper(),
                         job_no,
                         time.time(),
                         conn,
@@ -193,9 +190,7 @@ class PipelineServer(IPipelineServer):
         success = True
         for i in range(self.num_instances):
             name = f"pipeline{i}"
-            success &= ui_detection_warmup(
-                manager.get_warmup_helper(i), warmup_image, name, on_error
-            )
+            success &= manager.get_warmup_helper(i).warmup(warmup_image, name, on_error)
             if not success:
                 break
 

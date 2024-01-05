@@ -15,7 +15,6 @@ from src.hybrid.benchmark import Benchmarker
 from src.hybrid.helper import PipelineHelper
 from src.hybrid.logger import Logger
 from src.hybrid.manager import PipelineManager
-from src.process import ui_detection_serve, ui_detection_warmup
 
 
 class _HandlerHelper:
@@ -127,8 +126,7 @@ class _HandlerHelper:
         conn : socket
             Socket for an accepted connection.
         """
-        ui_detection_serve(
-            self.helper,
+        self.helper.serve(
             job_no,
             start_time,
             conn,
@@ -294,7 +292,7 @@ class ConnectionHandler:
 
         self._register_signal_handlers(handler_helper, manager)
         if warmup_image is not None:
-            self._warmup(manager.helper.get_helper(), warmup_image)
+            self._warmup(manager.get_helper(), warmup_image)
         self._ready()
 
         while True:
@@ -370,9 +368,7 @@ class ConnectionHandler:
         kill : bool
             Whether to kill the process if an error occurs.
         """
-        success = ui_detection_warmup(
-            helper, warmup_image, self.get_name(), self._error
-        )
+        success = helper.warmup(warmup_image, self.get_name(), self._error)
 
         if success:
             self.logger.debug(f"[{self.get_name()}] Warm-up complete.")

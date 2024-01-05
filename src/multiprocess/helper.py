@@ -6,9 +6,10 @@ from multiprocessing.managers import DictProxy, SyncManager
 from threading import Condition
 
 from src.constructor import PipelineConstructor
+from src.helper import IPipelineHelper
 from src.multiprocess.benchmark import BenchmarkListener, Benchmarker
 from src.multiprocess.logger import LogListener, Logger
-from src.pipeline import IPipelineHelper, PipelineModule
+from src.pipeline import PipelineModule
 
 
 class PipelineManagerHelper:

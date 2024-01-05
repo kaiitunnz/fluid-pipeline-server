@@ -5,10 +5,11 @@ from fluid_ai.base import UiElement
 
 from src.benchmark import Benchmarker
 from src.constructor import ModuleConstructor, PipelineConstructor
+from src.helper import IPipelineHelper
 from src.multithread.loadbalancer import LoadBalancer
 from src.multithread.logger import Logger
 from src.multithread.worker import Worker
-from src.pipeline import PipelineModule, IPipelineHelper
+from src.pipeline import PipelineModule
 
 
 class PipelineManagerHelper:

@@ -13,50 +13,10 @@ from PIL import Image, ImageFile  # type: ignore
 
 from src.benchmark import Benchmarker
 from src.pipeline import IPipelineServer, PipelineModule
-from src.process import UiDetectionArgs, ui_detection_serve
-from src.sequential.helper import PipelineHelper
 from src.sequential.manager import PipelineManager
-from src.utils import ui_to_json
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 DEFAULT_BENCHMARK_FILE = "benchmark.csv"
-
-
-def _process(args: UiDetectionArgs) -> bytes:
-    """Performs the UI detection process with a sequential pipeline
-
-    Parameters
-    ----------
-    args : UiDetectionArgs
-        Arguments. See `UiDetectionArgs` for more details.
-
-    Returns
-    -------
-    bytes
-        Result of the process, serialized into UTF-8-encoded JSON format.
-    """
-    helper, _, waiting_time, addr, screenshot_img, base_elements, _ = args
-    assert isinstance(helper, PipelineHelper)
-
-    # Process the screenshot.
-    helper.log_debug(addr, "Processing UI elements.")
-    processing_start = time.time()  # bench
-    helper.send(PipelineModule.DETECTOR, screenshot_img, base_elements)
-    results = helper.wait(PipelineModule.DETECTOR)
-    processing_time = time.time() - processing_start  # bench
-    helper.log_debug(addr, f"Found {len(results)} UI elements.")
-
-    if helper.benchmarker is None:
-        results_json = ui_to_json(screenshot_img, results).encode("utf-8")
-    else:
-        entry = [waiting_time, processing_time]  # type: ignore
-        helper.benchmarker.add(entry)
-        metrics = {"keys": helper.benchmarker.metrics, "values": entry}
-        results_json = ui_to_json(screenshot_img, results, metrics=metrics).encode(
-            "utf-8"
-        )
-
-    return results_json
 
 
 class PipelineServer(IPipelineServer):
@@ -206,16 +166,14 @@ class PipelineServer(IPipelineServer):
                 self.logger.info(f'Got connection from "{addr[0]}:{addr[1]}"')
                 job_no += 1
                 pool.apply_async(
-                    ui_detection_serve,
+                    self.manager.get_helper().serve,
                     args=(
-                        self.manager.get_helper(),
                         job_no,
                         time.time(),
                         conn,
                         self.chunk_size,
                         self.max_image_size,
                         self.test_mode,
-                        _process,
                     ),
                 )
 

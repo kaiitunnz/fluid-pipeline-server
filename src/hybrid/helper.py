@@ -4,10 +4,11 @@ from typing import Dict, List, Optional
 from fluid_ai.base import UiElement
 
 from src.constructor import ModuleConstructor, PipelineConstructor
+from src.helper import IPipelineHelper
 from src.hybrid.benchmark import Benchmarker
 from src.hybrid.logger import Logger
 from src.hybrid.worker import Worker
-from src.pipeline import IPipelineHelper, PipelineModule
+from src.pipeline import PipelineModule
 
 
 class PipelineManagerHelper:

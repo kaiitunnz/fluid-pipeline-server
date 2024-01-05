@@ -1,11 +1,15 @@
+import time
 from queue import SimpleQueue
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Tuple
 
+from numpy import ndarray
 from fluid_ai.base import UiElement
 
 from src.benchmark import IBenchmarker
+from src.helper import IPipelineHelper
 from src.logger import ILogger
-from src.pipeline import IPipelineHelper, PipelineModule
+from src.pipeline import PipelineModule
+from src.utils import ui_to_json
 
 
 class PipelineHelper(IPipelineHelper):
@@ -60,3 +64,54 @@ class PipelineHelper(IPipelineHelper):
 
     def wait(self, _: Literal[PipelineModule.DETECTOR]) -> List[UiElement]:
         return self._res_channel.get()
+
+    def process(
+        self,
+        _job_no: int,
+        waiting_time: float,
+        addr: Tuple[str, int],
+        screenshot_img: ndarray,
+        base_elements: Optional[List[UiElement]],
+        _test_mode: bool,
+    ):
+        """Executes the UI detection process with a sequential pipeline
+
+        Parameters
+        ----------
+        job_no : int
+            Job number, used to identify the job.
+        waiting_time : float
+            Time for which the client waits until its request gets handled.
+        addr : Tuple[str, int]
+            Client's IP address.
+        screenshot_img : ndarray
+            Screenshot to be processed.
+        base_elements : Optional[List[UiElement]]
+            Base elements, aka additional UI elements.
+        test_mode : bool
+            Whether to handle connections in test mode.
+
+        Returns
+        -------
+        bytes
+            Result of the process, serialized into UTF-8-encoded JSON format.
+        """
+        # Process the screenshot.
+        self.log_debug(addr, "Processing UI elements.")
+        processing_start = time.time()  # bench
+        self.send(PipelineModule.DETECTOR, screenshot_img, base_elements)
+        results = self.wait(PipelineModule.DETECTOR)
+        processing_time = time.time() - processing_start  # bench
+        self.log_debug(addr, f"Found {len(results)} UI elements.")
+
+        if self.benchmarker is None:
+            results_json = ui_to_json(screenshot_img, results).encode("utf-8")
+        else:
+            entry = [waiting_time, processing_time]  # type: ignore
+            self.benchmarker.add(entry)
+            metrics = {"keys": self.benchmarker.metrics, "values": entry}
+            results_json = ui_to_json(screenshot_img, results, metrics=metrics).encode(
+                "utf-8"
+            )
+
+        return results_json
