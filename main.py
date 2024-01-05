@@ -26,10 +26,10 @@ from fluid_ai.ui.matching import (
 
 from src.constructor import ModuleConstructor, PipelineConstructor
 from src.hybrid.server import PipelineServer as HybridServer
-from src.multiprocessing.server import PipelineServer as MultiprocessingServer
-from src.pipeline import PipelineServerInterface
+from src.multiprocess.server import PipelineServer as MultiprocessServer
+from src.multithread.server import PipelineServer as MultithreadServer
+from src.pipeline import IPipelineServer
 from src.sequential.server import PipelineServer as SequentialServer
-from src.threading.server import PipelineServer as ThreadingServer
 
 
 def parse_args() -> Namespace:
@@ -50,7 +50,7 @@ def parse_args() -> Namespace:
         "-m",
         "--mode",
         action="store",
-        choices=["sequential", "threading", "multiprocessing", "hybrid"],
+        choices=["sequential", "multithread", "multiprocess", "hybrid"],
         default="hybrid",
         help="Pipeline server mode",
     )
@@ -179,7 +179,7 @@ def main(args: Namespace):
     with open("config.json", "r") as f:
         config = json.load(f)
     sample_file = config["server"].pop("sample_file")
-    pipeline_server: PipelineServerInterface
+    pipeline_server: IPipelineServer
     if args.mode == "sequential":
         pipeline = pipeline_from_config(config)
         pipeline_server = SequentialServer(
@@ -188,19 +188,20 @@ def main(args: Namespace):
             verbose=args.verbose,
             benchmark=args.benchmark is not None,
             benchmark_file=args.benchmark,
+            test_mode=config["test_mode"],
         )
-    elif args.mode == "threading":
+    elif args.mode == "multithread":
         constructor = constructor_from_config(config)
-        pipeline_server = ThreadingServer(
+        pipeline_server = MultithreadServer(
             **config["server"],
             pipeline=constructor,
             verbose=args.verbose,
             benchmark=args.benchmark is not None,
             benchmark_file=args.benchmark,
         )
-    elif args.mode == "multiprocessing":
+    elif args.mode == "multiprocess":
         constructor = constructor_from_config(config)
-        pipeline_server = MultiprocessingServer(
+        pipeline_server = MultiprocessServer(
             **config["server"],
             pipeline=constructor,
             verbose=args.verbose,

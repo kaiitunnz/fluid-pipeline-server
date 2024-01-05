@@ -1,15 +1,37 @@
-import logging
 import threading
 from queue import SimpleQueue
 from typing import Any, Callable, Optional
 
+from src.sequential.logger import Logger
+
 
 class Worker:
+    """
+    Pipeline worker.
+
+    It serves the entire UI detection pipeline.
+
+    Attributes
+    ----------
+    func : Callable
+        Function to invoke the UI detection pipeline.
+    channel : SimpleQueue
+        Channel on which it listens for new jobs.
+    name : Optional[str]
+        Name of the instance, used to identify itself in the server log.
+    module : Any
+        UI detection pipeline, used by `func`.
+    logger : Logger
+        Logger to log its process.
+    thread : Optional[threading.Thread]
+        Associated worker thread.
+    """
+
     func: Callable
     channel: SimpleQueue
     name: Optional[str]
     module: Any
-    logger: logging.Logger
+    logger: Logger
     thread: Optional[threading.Thread] = None
 
     def __init__(
@@ -17,9 +39,23 @@ class Worker:
         func: Callable,
         channel: SimpleQueue,
         module: Any,
-        logger: logging.Logger,
+        logger: Logger,
         name: Optional[str] = None,
     ):
+        """
+        Parameters
+        ----------
+        func : Callable
+            Function to invoke the UI detection pipeline.
+        channel : SimpleQueue
+            Channel on which it listens for new jobs.
+        module : Any
+            UI detection pipeline, used by `func`.
+        logger : Logger
+            Logger to log its process.
+        name : Optional[str]
+            Name of the instance, used to identify itself in the server log.
+        """
         self.func = func
         self.channel = channel
         self.name = name
@@ -27,22 +63,41 @@ class Worker:
         self.logger = logger
 
     def start(self):
+        """Creates a pipeline worker thread and starts the worker"""
         self.thread = threading.Thread(
             target=self.serve, name=self.name, args=(self.module,), daemon=False
         )
         self.thread.start()
 
     def serve(self, module: Any):
+        """Serves the pipeline
+
+        Parameters
+        ----------
+        module : Any
+            UI detection pipeline.
+        """
         try:
             while True:
                 self.logger.debug(f"[{self.name}] Waiting for a message.")
-                out_channel, args = self.channel.get()
+                job = self.channel.get()
+                if job is None:
+                    raise EOFError
+                out_channel, args = job
                 assert isinstance(out_channel, SimpleQueue)
                 out_channel.put(self.func(*args, module=module))
         except EOFError:
             self.logger.info(f"'{self.name}' worker's channel closed.")
 
     def terminate(self, force: bool = False):
+        """Terminates the pipeline worker
+
+        Parameters
+        ----------
+        force : bool
+            Whether to immediately terminate the worker thread without waiting for
+            the pending jobs to finish.
+        """
         if self.thread is None:
             raise ValueError("The worker thread has not been started.")
         if not force:

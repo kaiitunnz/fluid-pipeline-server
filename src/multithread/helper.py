@@ -3,11 +3,12 @@ from typing import Dict, List, Optional
 
 from fluid_ai.base import UiElement
 
+from src.benchmark import Benchmarker
 from src.constructor import ModuleConstructor, PipelineConstructor
-from src.hybrid.benchmark import Benchmarker
-from src.hybrid.logger import Logger
-from src.hybrid.worker import Worker
-from src.pipeline import IPipelineHelper, PipelineModule
+from src.multithread.loadbalancer import LoadBalancer
+from src.multithread.logger import Logger
+from src.multithread.worker import Worker
+from src.pipeline import PipelineModule, IPipelineHelper
 
 
 class PipelineManagerHelper:
@@ -18,11 +19,8 @@ class PipelineManagerHelper:
 
     Attributes
     ----------
-    key : int
-        ID of the instance. It is used to differentiate the instance from other instances
-        of this class.
-    workers : Dict[PipelineModule, Worker]
-        Mapping from pipeline module names to the corresponding pipeline workers.
+    channels: Dict[PipelineModule, LoadBalancer]
+        Mapping from pipeline module names to the corresponding load balancers.
     textual_elements : List[str]
         List of textual UI class names.
     icon_elements : List[str]
@@ -32,10 +30,11 @@ class PipelineManagerHelper:
     benchmarker : Optional[Benchmarker]
         Benchmarker to benchmark the UI detection pipeline server. `None` to not
         benchmark the server.
+    num_instances : int
+        Number of instances of the UI detection pipeline.
     """
 
-    key: int
-    workers: Dict[PipelineModule, Worker]
+    channels: Dict[PipelineModule, LoadBalancer]
 
     textual_elements: List[str]
     icon_elements: List[str]
@@ -43,21 +42,19 @@ class PipelineManagerHelper:
     logger: Logger
     benchmarker: Optional[Benchmarker]
 
+    num_instances: int
     _count: int
 
     def __init__(
         self,
-        key: int,
         constructor: PipelineConstructor,
         logger: Logger,
         benchmarker: Optional[Benchmarker],
+        num_instances: int,
     ):
         """
         Parameters
         ----------
-        key : int
-            ID of the instance. It is used to differentiate the instance from other instances
-            of this class.
         constructor : PipelineConstructor
             Constructor of the UI detection pipeline.
         logger : Logger
@@ -65,22 +62,27 @@ class PipelineManagerHelper:
         benchmarker : Optional[Benchmarker]
             Benchmarker to benchmark the UI detection pipeline server. `None` to not
             benchmark the server.
+        num_instances : int
+            Number of instances of the UI detection pipeline.
         """
-        self.key = key
-        self.workers = {}
+        self.channels = {}
+        self.num_instances = num_instances
         self.logger = logger
         self.benchmarker = benchmarker
 
         for name, module in constructor.modules.items():
-            self.workers[name] = self._create_worker(name, module)
+            self.channels[name] = self._create_module_instances(name, module)
 
         self.textual_elements = constructor.textual_elements
         self.icon_elements = constructor.icon_elements
 
         self._count = 0
 
-    def _create_worker(self, name: PipelineModule, module: ModuleConstructor) -> Worker:
-        """Creates a pipeline worker to serve a component of the UI detection pipeline.
+    def _create_module_instances(
+        self, name: PipelineModule, module: ModuleConstructor
+    ) -> LoadBalancer:
+        """Creates a load balancer that manages multiple instances of the given pipeline
+        module
 
         Parameters
         ----------
@@ -91,17 +93,16 @@ class PipelineManagerHelper:
 
         Returns
         -------
-        Worker
-            Created pipeline worker.
+        LoadBalancer
+            Created load balancer.
         """
-        return Worker(
-            module.func,
-            SimpleQueue(),
-            module(),
-            self.logger,
-            name.value + str(self.key),
-            module.is_thread,
-        )
+        workers = [
+            Worker(
+                module.func, SimpleQueue(), module(), self.logger, name.value + str(i)
+            )
+            for i in range(self.num_instances)
+        ]
+        return LoadBalancer(workers, self.logger)
 
     def get_helper(self) -> "PipelineHelper":
         """Instantiates a pipeline helper which can be used by connection handling
@@ -116,7 +117,17 @@ class PipelineManagerHelper:
         self._count += 1
         return PipelineHelper(
             key,
-            self.workers,
+            self.channels,
+            self.textual_elements,
+            self.icon_elements,
+            self.logger,
+            self.benchmarker,
+        )
+
+    def get_warmup_helper(self, i: int) -> "WarmupHelper":
+        return WarmupHelper(
+            i,
+            self.channels,
             self.textual_elements,
             self.icon_elements,
             self.logger,
@@ -125,16 +136,13 @@ class PipelineManagerHelper:
 
     def start(self):
         """Starts the pipeline workers"""
-        for worker in self.workers.values():
-            worker.start()
+        for balancer in self.channels.values():
+            balancer.start()
 
     def terminate(self, force: bool = False):
-        """Terminates the pipeline workers
-
-        It waits until all the workers finish their current jobs.
-        """
-        for worker in self.workers.values():
-            worker.terminate(force)
+        """Terminates the pipeline workers"""
+        for balancer in self.channels.values():
+            balancer.terminate(force)
 
 
 class PipelineHelper(IPipelineHelper):
@@ -158,13 +166,14 @@ class PipelineHelper(IPipelineHelper):
     """
 
     key: int
-    _workers: Dict[PipelineModule, Worker]
-    _channels: Dict[PipelineModule, SimpleQueue]
+
+    _channels: Dict[PipelineModule, LoadBalancer]
+    _res_channels: Dict[PipelineModule, SimpleQueue]
 
     def __init__(
         self,
         key: int,
-        workers: Dict[PipelineModule, Worker],
+        channels: Dict[PipelineModule, LoadBalancer],
         textual_elements: List[str],
         icon_elements: List[str],
         logger: Logger,
@@ -174,10 +183,10 @@ class PipelineHelper(IPipelineHelper):
         Parameters
         ----------
         key : int
-            ID of the instance. It is used to differentiate the instance from other instances
-            of this class.
-        workeres : Dict[PipelineModule, Worker]
-            Mapping from pipeline module names to the corresponding pipeline workers.
+            ID of the instance. It is used to differentiate the instance from other
+            instances of this class.
+        channels : Dict[PipelineModule, LoadBalancer]
+            Mapping from pipeline module names to the corresponding load balancers.
         textual_elements : List[str]
             List of textual UI class names.
         icon_elements : List[str]
@@ -190,44 +199,28 @@ class PipelineHelper(IPipelineHelper):
         """
         super().__init__(logger, benchmarker, textual_elements, icon_elements)
         self.key = key
-        self._workers = workers
-        self.textual_elements = textual_elements
-        self.icon_elements = icon_elements
-        self._channels = {k: SimpleQueue() for k in workers.keys()}
+        self._channels = channels
+        self._res_channels = {module: SimpleQueue() for module in channels.keys()}
 
     def send(self, target: PipelineModule, *args):
-        """Sends data to the target UI detection pipeline module
-
-        It does not immediately return the result. Otherwise, `PipelineHelper.wait()`
-        must be called to retrieve the result.
-
-        Parameters
-        ----------
-        target : PipelineModule
-            Target UI detection pipeline module.
-        *args
-            Data to be sent to the module.
-        """
-        worker = self._workers[target]
-        if worker._is_thread:
-            worker.channel.put((self._channels[target], args))
-        else:
-            self._channels[target].put(worker.func(*args, module=worker.module))
+        self._channels[target].send((self._res_channels[target], args))
 
     def wait(self, target: PipelineModule) -> List[UiElement]:
-        """Waits and gets the result from the target UI detection pipeline module
+        return self._res_channels[target].get()
 
-        This method must be called only after an associated call to the `PipelineHelper.send()`
-        method. Otherwise, it will block indefinitely.
-
-        Parameters
-        ----------
-        target : PipelineModule
-            Target UI detection pipeline module.
+    def get_num_instances(self) -> int:
+        """Gets the number of instances of the UI detection pipeline
 
         Returns
         -------
-        List[UiElement]
-            Resulting list of UI elements returned from the module.
+        int
+            Number of instances of the UI detection pipeline.
         """
-        return self._channels[target].get()
+        if len(self._channels) == 0:
+            return 0
+        return len(tuple(self._channels.values())[0].workers)
+
+
+class WarmupHelper(PipelineHelper):
+    def send(self, target: PipelineModule, *args):
+        self._channels[target].sendi(self.key, (self._res_channels[target], args))

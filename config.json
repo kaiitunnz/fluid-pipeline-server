@@ -19,7 +19,7 @@
     "args": {
       "model_path": "/media/test/noppanat/models/ui_filter_boundary.pt",
       "batch_size": 32,
-      "device": "cuda:0"
+      "device": "cuda:1"
     }
   },
   "ui_matcher": {
@@ -28,15 +28,15 @@
     "args": { "iou_threshold": 0.6 }
   },
   "text_recognizer": {
-    "dummy": true,
+    "dummy": false,
     "batch_size": 1
   },
   "icon_labeler": {
-    "dummy": true,
+    "dummy": false,
     "args": {
       "model_path": "/media/test/noppanat/models/efficientnet_op_cpu_migrated.pt",
       "batch_size": 32,
-      "device": "cuda:0"
+      "device": "cuda:1"
     }
   },
   "special_elements": {

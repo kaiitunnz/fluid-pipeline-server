@@ -6,11 +6,28 @@ from src.pipeline import PipelineModule
 
 
 class ModuleConstructor:
+    """
+    A lazy constructor of a UI detection pipeline module.
+
+    Attributes
+    ----------
+    constructor : Callable[..., UiDetectionModule]
+        Constructor of a UI detection pipeline module.
+    func : Callable
+        Function that utilizes the constructed module.
+    is_thread : bool
+        Whether to spawns a new thread to execute the module.
+    args : Iterable
+        Positional arguments to the constructor.
+    kwargs : Dict
+        Keyword arguments to the constructor.
+    """
+
     constructor: Callable[..., UiDetectionModule]
     func: Callable
     is_thread: bool
     args: Iterable
-    kwargs: Dict
+    kwargs: Dict[str, Any]
 
     def __init__(
         self,
@@ -19,16 +36,50 @@ class ModuleConstructor:
         is_thread: bool = True,
         **kwargs,
     ):
+        """
+        Parameters
+        ----------
+        constructor : Callable[..., UiDetectionModule]
+            Constructor of a UI detection pipeline module.
+        *args
+            Positional arguments to the constructor.
+        is_thread : bool
+            Whether to spawns a new thread to execute the module.
+        **kwargs
+            Keyword arguments to the constructor.
+        """
         self.constructor = constructor
         self.args = args
         self.is_thread = is_thread
         self.kwargs = kwargs
 
     def __call__(self) -> Any:
+        """Initializes the UI detection pipeline module from the constructor
+
+        Returns
+        -------
+        Any
+            Initialized UI detection pipeline module.
+        """
         return self.constructor(*self.args, **self.kwargs)
 
 
 class PipelineConstructor:
+    """
+    A lazy constructor of a UI detection pipeline.
+
+    Attributes
+    ----------
+    modules : Dict[PipelineModule, ModuleConstructor]
+        Mapping from pipeline module names to module constructors.
+    textual_elements : List[str]
+        List of textual UI class names.
+    icon_elements : List[str]
+        List of icon UI class names.
+    test_mode : bool
+        Whether to initializes the pipeline in test mode.
+    """
+
     modules: Dict[PipelineModule, ModuleConstructor]
     textual_elements: List[str]
     icon_elements: List[str]
@@ -46,6 +97,26 @@ class PipelineConstructor:
         icon_elements: List[str],
         test_mode: bool = False,
     ):
+        """
+        Parameters
+        ----------
+        detector : ModuleConstructor
+            Constructor for a UI detection model.
+        filter : ModuleConstructor
+            Constructor for a UI filter, aka an invalid UI detection model.
+        matcher : ModuleConstructor
+            Constructor for a UI matching model.
+        text_recognizer : ModuleConstructor
+            Constructor for a text recognition module.
+        icon_labeler : ModuleConstructor
+            Constructor for an icon labeling module.
+        textual_elements : List[str]
+            List of textual UI class names.
+        icon_elements : List[str]
+            List of icon UI class names.
+        test_mode : bool
+            Whether to initializes the pipeline in test mode.
+        """
         detector.func = PipelineModule.detect
         if test_mode:
             matcher.func = PipelineModule.match_i

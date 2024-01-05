@@ -5,30 +5,65 @@ import signal
 import socket as sock
 import sys
 import time
+from PIL import ImageFile  # typing: ignore
 from threading import Semaphore
 from typing import List, Optional
 
-from PIL import ImageFile
-
-from src.benchmark import Benchmarker
+from src.benchmark import BENCHMARK_METRICS, Benchmarker
 from src.constructor import PipelineConstructor
 from src.hybrid.benchmark import BenchmarkListener
 from src.hybrid.handler import ConnectionHandler
-from src.hybrid.logging import LogListener
-from src.pipeline import PipelineServerInterface
+from src.hybrid.logger import LogListener
+from src.pipeline import IPipelineServer
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 DEFAULT_BENCHMARK_FILE = "benchmark.csv"
 
 
-class PipelineServer(PipelineServerInterface):
+class PipelineServer(IPipelineServer):
+    """
+    UI detection pipeline server with a hybrid architecture.
+
+    It utilizes both multithreading, to minimize communication overhead, and multiprocessing,
+    to fully leverage parallel processors. It comprises a main process, which accepts
+    connections from clients and distributes them to connection handler processes,
+    each having worker threads to concurrently handle requests distributed to it.
+    Each connection handler process has exactly one instance of the UI detection pipeline,
+    whose usage is shared by the worker threads within the worker process.
+
+    Attributes
+    ----------
+    hostname : str
+        Host name.
+    port : str
+        Port to listen to client connections.
+    pipeline: PipelineConstructor
+        Constructor of the UI detection pipeline.
+    chunk_size : int
+        Chunk size for reading bytes from the sockets.
+    max_image_size : int
+        Maximum size of an image from the client.
+    num_workers : int
+        Number of worker threads in each connection handler process.
+    socket : Optional[sock.socket]
+        Server socket.
+    verbose : bool
+        Whether to log server events verbosely.
+    logger : logging.Logger
+        Logger to log server events.
+    benchmarker : Optional[Benchmarker]
+        Benchmarker for benchmarking the server.
+    handlers : List[ConnectionHandler]
+        Connection handlers, each representing a connection handler process.
+    """
+
     hostname: str
     port: str
     pipeline: PipelineConstructor
     chunk_size: int
     max_image_size: int
     num_workers: int
-    socket: Optional[sock.socket] = None
+    socket: Optional[sock.socket]
     verbose: bool
     logger: logging.Logger
     benchmarker: Optional[Benchmarker]
@@ -49,38 +84,66 @@ class PipelineServer(PipelineServerInterface):
         verbose: bool = True,
         benchmark: bool = False,
         benchmark_file: Optional[str] = None,
+        **kwargs,
     ):
+        """
+        Parameters
+        ----------
+        hostname : str
+            Host name.
+        port : str
+            Port to listen to client connections.
+        pipeline: PipelineConstructor
+            Constructor of the UI detection pipeline.
+        chunk_size : int
+            Chunk size for reading bytes from the sockets.
+        max_image_size : int
+            Maximum size of an image from the client.
+        num_workers : int
+            Number of worker threads in each connection handler process.
+        num_instances : int
+            Number of connection handler processes, which is equivalent to the number
+            of instances of the UI detection pipeline.
+        verbose : bool
+            Whether to log server events verbosely.
+        benchmark : bool
+            Whether to run the server in the benchmark mode.
+        benchmark_file : Optional[str]
+            Path to the file to save the benchmark results.
+        """
         self.hostname = hostname
         self.port = port
         self.pipeline = pipeline
         self.chunk_size = chunk_size
         self.max_image_size = max_image_size
         self.num_workers = num_workers
+        self.socket = None
         self.num_instances = num_instances
         self.verbose = verbose
         self.logger = self._init_logger(verbose)
         self.handlers = []
 
-        benchmark_metrics = [
-            "Waiting time",
-            "UI detection time",
-            "Invalid UI detection time",
-            "UI matching time",
-            "UI processing time",
-            "Text recognition time",
-            "Icon labeling time",
-            "Processing time",
-        ]
         self.benchmarker = (
             Benchmarker(
-                benchmark_metrics,
+                BENCHMARK_METRICS,
                 benchmark_file or DEFAULT_BENCHMARK_FILE,
             )
             if benchmark
             else None
         )
 
+        if len(kwargs) > 0:
+            self.logger.warn(f"Got unexpected arguments: {kwargs}")
+
     def start(self, warmup_image: Optional[str] = None):
+        """Starts the UI detection pipeline server
+
+        Parameters
+        ----------
+        warmup_image: Optional[str]
+            Path to the image for warming up the UI detection pipeline and performing
+            initial testing. `None` to skip the warming up stage.
+        """
         self.logger.info("Starting the pipeline server...")
 
         # Use SimpleQueue instead of Queue, which has its own finalizer
@@ -140,6 +203,15 @@ class PipelineServer(PipelineServerInterface):
         log_listener: LogListener,
         benchmark_listener: Optional[BenchmarkListener],
     ):
+        """Registers signal handlers to handle termination signals
+
+        Parameters
+        ----------
+        log_listener : LogListener
+            Listener of logging events.
+        benchmark_listener : Optional[BenchmarkListener],
+            Listener of benchmarking events.
+        """
         term_signals = (signal.SIGTERM, signal.SIGINT, signal.SIGQUIT)
 
         def _exit(signum: int, _):
@@ -159,15 +231,3 @@ class PipelineServer(PipelineServerInterface):
 
         for sig in term_signals:
             signal.signal(sig, _exit)
-
-    @classmethod
-    def _init_logger(cls, verbose: bool = True) -> logging.Logger:
-        fmt = "[%(asctime)s | %(name)s] [%(levelname)s] %(message)s"
-        datefmt = "%Y-%m-%d %H:%M:%S"
-        logging.basicConfig(format=fmt, datefmt=datefmt)
-        logger = logging.getLogger(cls.__name__)
-        if verbose:
-            logger.setLevel(logging.DEBUG)
-        else:
-            logger.setLevel(logging.INFO)
-        return logger

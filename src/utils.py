@@ -8,6 +8,21 @@ from fluid_ai.base import Array, BBox, NormalizedBBox, UiElement, array_get_size
 
 
 def parse_results(img: np.ndarray, results: Dict[str, Any]) -> List[UiElement]:
+    """Parses the results of the UI detection pipeline server and initializes detected
+    UI elements
+
+    Parameters
+    ----------
+    img : ndarray
+        Image input to the server.
+    results : Dict[str, Any]
+        Results returned from the server.
+
+    Returns
+    -------
+    List[UiElement]
+        List of UI elements detected by the server.
+    """
     elems = []
     for elem in results["elements"]:
         name = elem["class"]
@@ -25,6 +40,22 @@ def parse_results(img: np.ndarray, results: Dict[str, Any]) -> List[UiElement]:
 
 
 def readall(socket: sock.socket, num_bytes: int, chunk_size: int) -> bytes:
+    """Reads the specified number of bytes from the socket
+
+    Parameters
+    ----------
+    socket : socket
+        Socket to read from.
+    num_bytes : int
+        Total number of bytes to be read.
+    chunk_size : int
+        Maximum number of bytes to be read at a time.
+
+    Returns
+    -------
+    bytes
+        Read bytes whose length is guaranteed to equal `num_bytes`.
+    """
     buffer = bytearray(num_bytes)
     curr = 0
     while curr < num_bytes:
@@ -38,6 +69,20 @@ def readall(socket: sock.socket, num_bytes: int, chunk_size: int) -> bytes:
 
 
 def json_to_ui(json_elements: str, screenshot: Array) -> List[UiElement]:
+    """Initializes UI elements from serialized objects in JSON format
+
+    Parameters
+    ----------
+    json_elements : str
+        Serialized UI elements in JSON format.
+    screenshot : Array
+        Screenshot associated with the UI elements.
+
+    Returns
+    -------
+    List[UiElement]
+        List of the initialized UI elements.
+    """
     elements: List[Dict[str, Any]] = json.loads(json_elements)
     result = []
     w, h = array_get_size(screenshot)
@@ -62,6 +107,22 @@ def json_to_ui(json_elements: str, screenshot: Array) -> List[UiElement]:
 
 
 def ui_to_json(screenshot: Array, elems: List[UiElement], **kwargs) -> str:
+    """Serializes UI elements in JSON format
+
+    Parameters
+    ----------
+    screenshot : Array
+        Screenshot associated with the UI elements.
+    elems : List[UiElement]
+        List of UI elements.
+    **kwargs
+        Additional fields to be added to the JSON object.
+
+    Returns
+    -------
+    str
+        Resulting JSON string.
+    """
     h, w, *_ = screenshot.shape
     data = {"img_shape": [w, h], "elements": [_elem_to_dict(e) for e in elems]}
     data.update(kwargs)
@@ -69,6 +130,18 @@ def ui_to_json(screenshot: Array, elems: List[UiElement], **kwargs) -> str:
 
 
 def _elem_to_dict(elem: UiElement) -> Dict[str, Any]:
+    """Converts a UI element to a dictionary
+
+    Parameters
+    ----------
+    elem : UiElement
+        UI element to be converted.
+
+    Returns
+    -------
+    Dict[str, Any]
+        Resulting dictionary.
+    """
     w, h = array_get_size(elem.get_screenshot())
     (x0, y0), (x1, y1) = elem.bbox.to_bbox(w, h)
     return {
@@ -84,25 +157,97 @@ def _elem_to_dict(elem: UiElement) -> Dict[str, Any]:
 
 
 def _log(log_func: Callable[[str], None], addr: Tuple[str, int], msg: str):
+    """Formats a message with the associated client's IP and port and logs it with
+    the given logging function
+
+    Parameters
+    ----------
+    log_func : Callable[[str], None]
+        Logging function that takes a string to be logged.
+    addr : Tuple[str, int]
+        `(IP address, port)` of the associated client.
+    msg : str
+        Actual message to be logged.
+    """
     ip, port = addr
     log_func(f"({ip}:{port}) {msg}")
 
 
 def log_debug(logger: logging.Logger, addr: Tuple[str, int], msg: str):
+    """Formats a message with the associated client's IP and port and logs it in
+    the debug level
+
+    Parameters
+    ----------
+    logger : Logger
+        Logger.
+    addr : Tuple[str, int]
+        `(IP address, port)` of the associated client.
+    msg : str
+        Actual message to be logged.
+    """
     _log(logger.debug, addr, msg)
 
 
 def log_info(logger: logging.Logger, addr: Tuple[str, int], msg: str):
+    """Formats a message with the associated client's IP and port and logs it in
+    the info level
+
+    Parameters
+    ----------
+    logger : Logger
+        Logger.
+    addr : Tuple[str, int]
+        `(IP address, port)` of the associated client.
+    msg : str
+        Actual message to be logged.
+    """
     _log(logger.info, addr, msg)
 
 
 def log_warning(logger: logging.Logger, addr: Tuple[str, int], msg: str):
+    """Formats a message with the associated client's IP and port and logs it in
+    the warning level
+
+    Parameters
+    ----------
+    logger : Logger
+        Logger.
+    addr : Tuple[str, int]
+        `(IP address, port)` of the associated client.
+    msg : str
+        Actual message to be logged.
+    """
     _log(logger.warn, addr, msg)
 
 
 def log_error(logger: logging.Logger, addr: Tuple[str, int], msg: str):
+    """Formats a message with the associated client's IP and port and logs it in
+    the error level
+
+    Parameters
+    ----------
+    logger : Logger
+        Logger.
+    addr : Tuple[str, int]
+        `(IP address, port)` of the associated client.
+    msg : str
+        Actual message to be logged.
+    """
     _log(logger.error, addr, msg)
 
 
 def log_critical(logger: logging.Logger, addr: Tuple[str, int], msg: str):
+    """Formats a message with the associated client's IP and port and logs it in
+    the critical level
+
+    Parameters
+    ----------
+    logger : Logger
+        Logger.
+    addr : Tuple[str, int]
+        `(IP address, port)` of the associated client.
+    msg : str
+        Actual message to be logged.
+    """
     _log(logger.critical, addr, msg)

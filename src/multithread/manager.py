@@ -1,9 +1,9 @@
 from typing import Optional
 
+from src.benchmark import Benchmarker
 from src.constructor import PipelineConstructor
-from src.hybrid.benchmark import Benchmarker
-from src.hybrid.helper import PipelineHelper, PipelineManagerHelper
-from src.hybrid.logger import Logger
+from src.multithread.helper import PipelineHelper, PipelineManagerHelper, WarmupHelper
+from src.multithread.logger import Logger
 
 
 class PipelineManager:
@@ -15,9 +15,6 @@ class PipelineManager:
 
     Attributes
     ----------
-    key : int
-        ID of the instance. It is used to differentiate the instance from other instances
-        of this class.
     pipeline : PipelineConstructor
         Constructor of the UI detection pipeline.
     helper: PipelineManagerHelper
@@ -26,24 +23,20 @@ class PipelineManager:
         Logger to log the UI detection process.
     """
 
-    key: int
     pipeline: PipelineConstructor
     helper: PipelineManagerHelper
     logger: Logger
 
     def __init__(
         self,
-        key: int,
         pipeline: PipelineConstructor,
         logger: Logger,
         benchmarker: Optional[Benchmarker],
+        num_instances: int,
     ):
         """
         Parameters
         ----------
-        key : int
-            ID of the instance. It is used to differentiate the instance from other
-            instances of this class.
         pipeline : PipelineConstructor
             Constructor of the UI detection pipeline.
         logger : Logger
@@ -51,9 +44,13 @@ class PipelineManager:
         benchmarker : Optional[Benchmarker]
             Benchmarker to benchmark the UI detection pipeline server. `None` to not
             benchmark the server.
+        num_instances : int
+            Number of instances of the UI detection pipeline to be created.
         """
         self.pipeline = pipeline
-        self.helper = PipelineManagerHelper(key, pipeline, logger, benchmarker)
+        self.helper = PipelineManagerHelper(
+            pipeline, logger, benchmarker, num_instances
+        )
         self.logger = logger
 
     def start(self):
@@ -71,9 +68,18 @@ class PipelineManager:
         """
         return self.helper.get_helper()
 
-    def terminate(self, force: bool = False):
-        """Terminates the UI detection pipeline's worker threads
+    def get_warmup_helper(self, i: int) -> WarmupHelper:
+        """Instantiates a pipeline helper which can be used to warm up the UI detection
+        pipeline.
 
-        It waits until all the workers finish their current jobs.
+        Returns
+        -------
+        i : int
+            Index of the instance of the UI detection pipeline to be warmed up.
         """
+        return self.helper.get_warmup_helper(i)
+
+    def terminate(self, force: bool = False):
+        """Terminates the UI detection pipeline's worker threads"""
+        self.logger.info("Terminating the workers...")
         self.helper.terminate(force)

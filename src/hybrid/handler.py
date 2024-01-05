@@ -1,41 +1,51 @@
 import multiprocessing as mp
-import numpy as np
 import os
-import pickle
 import signal
 import socket as sock
 import sys
 import threading
-import time
-from PIL import Image  # type: ignore
-from io import BytesIO
 from multiprocessing.queues import SimpleQueue
 from multiprocessing.synchronize import Semaphore
 from queue import Queue
 from threading import Thread
 from typing import Any, List, Optional
 
-from fluid_ai.base import UiElement
-
 from src.constructor import PipelineConstructor
 from src.hybrid.benchmark import Benchmarker
 from src.hybrid.helper import PipelineHelper
-from src.hybrid.logging import Logger
+from src.hybrid.logger import Logger
 from src.hybrid.manager import PipelineManager
-from src.pipeline import PipelineModule
-from src.utils import json_to_ui, readall, ui_to_json
-
-SAVE_IMG_DIR = "res"
-SAVE_IMG = False
-SOCKET_TIMEOUT = 5
+from src.process import ui_detection_serve, ui_detection_warmup
 
 
 class _HandlerHelper:
+    """
+    Helper that manages connection handling threads.
+
+    Attributes
+    ----------
+    helper : PipelineHelper
+        Helper used to access the UI detection pipeline modules.
+    chunk_size : int
+        Chunk size for reading bytes from the sockets.
+    max_image_size : int
+        Maximum size of an image from the client.
+    job_queue : Queue
+        Queue on which the connection handling threads listening.
+    logger : Logger
+        Logger for logging the UI detection process.
+    name : str
+        Name of the connection handler process.
+    test_mode : bool
+        Whether to handle connections in test mode.
+    """
+
     helper: PipelineHelper
     chunk_size: int
     max_image_size: int
     job_queue: Queue
     logger: Logger
+    name: str
     test_mode: bool
 
     _workers: List[Thread]
@@ -50,6 +60,24 @@ class _HandlerHelper:
         name: str,
         test_mode: bool,
     ):
+        """
+        Parameters
+        ----------
+        helper : PipelineHelper
+            Helper used to access the UI detection pipeline modules.
+        chunk_size : int
+            Chunk size for reading bytes from the sockets.
+        max_image_size : int
+            Maximum size of an image from the client.
+        num_workers : int
+            Number of connection handling threads to be spawned.
+        logger : Logger
+            Logger for logging the UI detection process.
+        name : str
+            Name of the connection handler process.
+        test_mode : bool
+            Whether to handle connections in test mode.
+        """
         self.helper = helper
         self.chunk_size = chunk_size
         self.max_image_size = max_image_size
@@ -64,10 +92,18 @@ class _HandlerHelper:
         ]
 
     def start(self):
+        """Starts the conenction handling threads"""
         for worker in self._workers:
             worker.start()
 
     def _serve(self, job_queue: Queue):
+        """Listens to the job queue and handles incoming jobs
+
+        Parameters
+        ----------
+        job_queue : Queue
+            Queue to be listened on for incoming jobs.
+        """
         while True:
             job = job_queue.get()
             if job is None:
@@ -80,184 +116,32 @@ class _HandlerHelper:
         start_time: float,
         conn: sock.socket,
     ):
-        waiting_time = time.time() - start_time  # bench
+        """Handles a job/connection, essentially serving the UI detection pipeline
 
-        try:
-            addr = conn.getpeername()
-            conn.settimeout(SOCKET_TIMEOUT)
-        except Exception as e:
-            self.helper.logger.error(
-                f"The following exception occurred while attempting to connect: {e}"
-            )
-            return
-
-        try:
-            # Receive a screenshot.
-            payload_size = int.from_bytes(
-                readall(conn, 4, self.chunk_size), "big", signed=False
-            )
-            self.helper.log_debug(
-                addr, f"Receiving a screenshot payload of size {payload_size} bytes."
-            )
-            if payload_size > self.max_image_size:
-                self.helper.log_error(
-                    addr, f"The payload size exceeds the maximum allowable size."
-                )
-                conn.close()
-                return
-            screenshot_payload = readall(conn, payload_size, self.chunk_size)
-            self.helper.log_debug(
-                addr,
-                f"Received a screenshot payload of size {len(screenshot_payload)} bytes.",
-            )
-
-            # Receive additional UI elements.
-            payload_size = int.from_bytes(
-                readall(conn, 4, self.chunk_size), "big", signed=False
-            )
-            if payload_size > 0:
-                self.helper.log_debug(
-                    addr,
-                    f"Receiving a UI-element payload of size {payload_size} bytes.",
-                )
-                element_payload = readall(conn, payload_size, self.chunk_size)
-                self.helper.log_debug(
-                    addr,
-                    f"Received a UI-element payload of size {len(element_payload)} bytes.",
-                )
-            else:
-                element_payload = None
-
-            # Parse the screenshot payload.
-            screenshot_bytes = BytesIO(screenshot_payload)
-            img = Image.open(screenshot_bytes)
-            if SAVE_IMG:
-                self.helper.save_image_i(img, job_no, SAVE_IMG_DIR)
-            screenshot_img = np.asarray(img)
-            self.helper.log_debug(
-                addr, f"Received an image of shape {screenshot_img.shape}."
-            )
-
-            # Parse the UI-element payload.
-            base_elements = (
-                None
-                if element_payload is None
-                else json_to_ui(
-                    element_payload.decode(encoding="utf-8"), screenshot_img
-                )
-            )
-            if base_elements is not None:
-                self.helper.log_debug(
-                    addr, f"Received {len(base_elements)} additional UI elements."
-                )
-                if self.test_mode:
-                    with open(f"{SAVE_IMG_DIR}/base_elements{job_no}.pkl", "wb") as f:
-                        pickle.dump(base_elements, f)
-
-            detection_start = time.time()  # bench
-            if self.helper.benchmarker is None:
-                # Detect UI elements and filter additional UI elements.
-                self.helper.log_debug(
-                    addr, "Detecting UI elements and filtering additional UI elements."
-                )
-                self.helper.send(PipelineModule.DETECTOR, job_no, screenshot_img)
-                self.helper.send(PipelineModule.FILTER, job_no, base_elements)
-                detected = self.helper.wait(PipelineModule.DETECTOR)
-                filtered = self.helper.wait(PipelineModule.FILTER)
-                self.helper.log_debug(addr, f"Found {len(detected)} UI elements.")
-                self.helper.log_debug(
-                    addr, f"Filtered in {len(filtered)} additional UI elements."
-                )
-            else:
-                # Detect UI elements.
-                self.helper.log_debug(addr, "Detecting UI elements.")
-                self.helper.send(PipelineModule.DETECTOR, job_no, screenshot_img)
-                detected = self.helper.wait(PipelineModule.DETECTOR)
-                detection_time = time.time() - detection_start  # bench
-                self.helper.log_debug(addr, f"Found {len(detected)} UI elements.")
-
-                # Filter additional UI elements.
-                self.helper.log_debug(addr, "Filtering additional UI elements.")
-                filter_start = time.time()  # bench
-                self.helper.send(PipelineModule.FILTER, job_no, base_elements)
-                filtered = self.helper.wait(PipelineModule.FILTER)
-                filter_time = time.time() - filter_start  # bench
-                self.helper.log_debug(
-                    addr, f"Filtered in {len(filtered)} additional UI elements."
-                )
-
-            if self.test_mode:
-                with open(f"{SAVE_IMG_DIR}/detected_elements{job_no}.pkl", "wb") as f:
-                    pickle.dump(detected, f)
-
-            # Match UI elements
-            self.helper.log_debug(addr, "Matching UI elements.")
-            matching_start = time.time()  # bench
-            self.helper.send(PipelineModule.MATCHER, job_no, filtered, detected)
-            matched = self.helper.wait(PipelineModule.MATCHER)
-            matching_time = time.time() - matching_start  # bench
-            self.helper.log_debug(
-                addr, f"Matched UI elements. {len(matched)} UI elements left."
-            )
-
-            ui_processing_time = time.time() - detection_start  # bench
-
-            # Partition the result.
-            text_elems = []
-            icon_elems = []
-            results: List[UiElement] = []
-            for e in matched:
-                if e.name in self.helper.textual_elements:
-                    text_elems.append(e)
-                elif e.name in self.helper.icon_elements:
-                    icon_elems.append(e)
-                else:
-                    results.append(e)
-
-            # Extract UI info.
-            self.helper.log_debug(addr, "Extracting UI info.")
-            if self.helper.benchmarker is None:
-                self.helper.send(PipelineModule.TEXT_RECOGNIZER, job_no, text_elems)
-                self.helper.send(PipelineModule.ICON_LABELER, job_no, icon_elems)
-                results.extend(self.helper.wait(PipelineModule.TEXT_RECOGNIZER))
-                results.extend(self.helper.wait(PipelineModule.ICON_LABELER))
-            else:
-                text_start = time.time()  # bench
-                self.helper.send(PipelineModule.TEXT_RECOGNIZER, job_no, text_elems)
-                results.extend(self.helper.wait(PipelineModule.TEXT_RECOGNIZER))
-                text_time = time.time() - text_start  # bench
-                icon_start = time.time()  # bench
-                self.helper.send(PipelineModule.ICON_LABELER, job_no, icon_elems)
-                results.extend(self.helper.wait(PipelineModule.ICON_LABELER))
-                icon_time = time.time() - icon_start  # bench
-
-            processing_time = time.time() - detection_start  # bench
-            if self.helper.benchmarker is None:
-                results_json = ui_to_json(screenshot_img, results).encode("utf-8")
-            else:
-                entry = [waiting_time, detection_time, filter_time, matching_time, ui_processing_time, text_time, icon_time, processing_time]  # type: ignore
-                self.helper.benchmarker.add(entry)
-                metrics = {"keys": self.helper.benchmarker.metrics, "values": entry}
-                results_json = ui_to_json(
-                    screenshot_img, results, metrics=metrics
-                ).encode("utf-8")
-
-            self.helper.log_debug(
-                addr,
-                f"Sending back the response of size {len(results_json)} bytes.",
-            )
-
-            conn.sendall(len(results_json).to_bytes(4, "big", signed=False))
-            self.helper.log_debug(addr, f"Sent response size: {len(results_json)}")
-            conn.sendall(results_json)
-            self.helper.log_info(addr, "Response sent.")
-        except Exception as e:
-            self.helper.log_error(addr, f"The following exception occurred: {e}")
-        finally:
-            self.helper.log_info(addr, "Connection closed.")
-            conn.close()
+        Parameters
+        ----------
+        job_no : int
+            Job number, used to identify the job.
+        start_time : float
+            Time at which the connection is accepted.
+        conn : socket
+            Socket for an accepted connection.
+        """
+        ui_detection_serve(
+            self.helper,
+            job_no,
+            start_time,
+            conn,
+            self.chunk_size,
+            self.max_image_size,
+            self.test_mode,
+        )
 
     def terminate(self, _force: bool = False):
+        """Terminates the connection handling threads
+
+        It blocks until all the threads finish handling the current jobs.
+        """
         for _ in range(len(self._workers)):
             self.job_queue.put(None)
         for i, worker in enumerate(self._workers):
@@ -266,6 +150,35 @@ class _HandlerHelper:
 
 
 class ConnectionHandler:
+    """
+    A class that handles incoming requests and serves a single instance of the UI
+    detection pipeline.
+
+    It handles multiple requests concurrently by creating a pool of worker threads.
+    However, it only manages one instance of the UI detection pipeline, whose usage
+    is shared by the worker threads.
+
+    Attributes
+    ----------
+    key : int
+        ID of the instance. It is used to differentiate the instance from other instances
+        of this class.
+    name : str
+        Name of the instance. There can be other instances of the same name.
+    constructor : PipelineConstructor
+        Constructor of the UI detection pipeline to be served.
+    num_workers : int
+        Number of worker threads in the pool to handle incoming requests.
+    logger : Logger
+        Logger to log the UI detection process.
+    benchmarker : Optional[Benchmarker]
+        Benchmarker for benchmarking the UI detection pipeline server.
+    chunk_size : int
+        Chunk size for reading bytes from the sockets.
+    max_image_size : int
+        Maximum size of an image from the client.
+    """
+
     CLS: str = "connection_handler"
 
     key: int
@@ -297,6 +210,29 @@ class ConnectionHandler:
         max_image_size: int,
         name: str = CLS,
     ):
+        """
+        Parameters
+        ----------
+        key : int
+            ID of the instance. It is used to differentiate the instance from other instances
+            of this class.
+        constructor : PipelineConstructor
+            Constructor of the UI detection pipeline to be served.
+        job_queue : SimpleQueue
+            Queue on which to listen for new jobs.
+        num_workers : int
+            Number of worker threads in the pool to handle incoming requests.
+        logger : Logger
+            Logger to log the UI detection process.
+        benchmarker : Optional[Benchmarker]
+            Benchmarker for benchmarking the UI detection pipeline server.
+        chunk_size : int
+            Chunk size for reading bytes from the sockets.
+        max_image_size : int
+            Maximum size of an image from the client.
+        name : str
+            Name of the instance.
+        """
         self.key = key
         self.constructor = constructor
         self.num_workers = num_workers
@@ -310,6 +246,14 @@ class ConnectionHandler:
         self._process = None
 
     def start(self, warmup_image: Optional[str] = None):
+        """Starts the connection handler process
+
+        Parameters
+        ----------
+        warmup_image : Optional[str]
+            Path to the image for warming up the UI detection pipeline and performing
+            initial testing. `None` to skip the warming up stage.
+        """
         self._process = mp.Process(
             target=self._serve,
             name=self.name,
@@ -319,6 +263,14 @@ class ConnectionHandler:
         self._process.start()
 
     def _serve(self, warmup_image: Optional[str] = None):
+        """Initializes the UI detection pipeline and serves incoming requests
+
+        Parameters
+        ----------
+        warmup_image : Optional[str]
+            Path to the image for warming up the UI detection pipeline and performing
+            initial testing. `None` to skip the warming up stage.
+        """
         self.logger.debug(f"[{self.get_name()}] Started serving.")
 
         manager = PipelineManager(
@@ -352,10 +304,19 @@ class ConnectionHandler:
             handler_helper.job_queue.put(job, block=True)
 
     def _ready(self):
+        """Notifies waiters that this connection handler is ready to serve"""
         self._is_ready.value = 1
         self._ready_sema.release()
 
     def wait_ready(self) -> bool:
+        """Waits for this connection handler to be ready to serve
+
+        Returns
+        -------
+        bool
+            Whether this connection handler is ready to serve. `False` if it failed
+            to start.
+        """
         self._ready_sema.acquire()
         return bool(self._is_ready.value)
 
@@ -366,72 +327,51 @@ class ConnectionHandler:
         start_time: float,
         conn: sock.socket,
     ):
+        """Sends a job to connection handlers listening on a job queue
+
+        Parameters
+        ----------
+        job_queue : SimpleQueue
+            Queue on which connection handlers are listening.
+        job_no : int
+            Job number, used to identify the job.
+        start_time: float
+            Time at which the connection is accepted.
+        conn : socket
+            Socket for an accepted connection.
+        """
         job_queue.put((job_no, start_time, conn))
 
     def _error(self, message: str, info: Any):
+        """Logs an error event and marks this connection handler as not ready to serve
+
+        Parameters
+        ----------
+        message : str
+            Error message.
+        info : Any
+            Additional information about the error.
+        """
         self.logger.error(message)
         self.logger.debug("Cause:")
         self.logger.debug(str(info))
         self._is_ready.value = 0
 
     def _warmup(self, helper: PipelineHelper, warmup_image: str, kill: bool = True):
-        success = True
-        job_no = 0
+        """Warms up the UI detection pipeline and performs initial testing
 
-        self.logger.debug(f"[{self.get_name()}] Warming up the pipeline...")
-        img = np.asarray(Image.open(warmup_image))
-
-        # Detect UI elements.
-        helper.send(PipelineModule.DETECTOR, job_no, img)
-        detected = helper.wait(PipelineModule.DETECTOR)
-        self.logger.debug(
-            f"[{self.get_name()}] ({PipelineModule.DETECTOR.value}) PASSED."
-        )
-
-        # Filter UI elements.
-        helper.send(PipelineModule.FILTER, job_no, detected)
-        filtered = helper.wait(PipelineModule.FILTER)
-
-        # Match UI elements.
-        helper.send(PipelineModule.MATCHER, job_no, filtered, filtered)
-        matched = helper.wait(PipelineModule.MATCHER)
-        if len(matched) == len(filtered):
-            self.logger.debug(
-                f"[{self.get_name()}] ({PipelineModule.MATCHER.value}) PASSED."
-            )
-        else:
-            success = False
-            self.logger.debug(
-                f"[{self.get_name()}] ({PipelineModule.MATCHER.value}) FAILED."
-            )
-            self._error(
-                "Failed to initialize the pipeline.",
-                {
-                    "detected": len(detected),
-                    "filtered": len(filtered),
-                    "matched": len(matched),
-                },
-            )
-
-        # Partition the result.
-        text_elems = []
-        icon_elems = []
-        for e in matched:
-            if e.name in helper.textual_elements:
-                text_elems.append(e)
-            elif e.name in helper.icon_elements:
-                icon_elems.append(e)
-
-        # Extract UI info.
-        helper.send(PipelineModule.TEXT_RECOGNIZER, job_no, text_elems)
-        helper.send(PipelineModule.ICON_LABELER, job_no, icon_elems)
-        helper.wait(PipelineModule.TEXT_RECOGNIZER)
-        helper.wait(PipelineModule.ICON_LABELER)
-        self.logger.debug(
-            f"[{self.get_name()}] ({PipelineModule.TEXT_RECOGNIZER.value}) PASSED."
-        )
-        self.logger.debug(
-            f"[{self.get_name()}] ({PipelineModule.ICON_LABELER.value}) PASSED."
+        Parameters
+        ----------
+        helper : PipelineHelper
+            Helper used to access the UI detection pipeline modules.
+        warmup_image : str
+            Path to the image for warming up the UI detection pipeline and performing
+            initial testing.
+        kill : bool
+            Whether to kill the process if an error occurs.
+        """
+        success = ui_detection_warmup(
+            helper, warmup_image, self.get_name(), self._error
         )
 
         if success:
@@ -445,6 +385,16 @@ class ConnectionHandler:
     def _register_signal_handlers(
         self, helper: _HandlerHelper, manager: PipelineManager
     ):
+        """Registers signal handlers to handle termination signals
+
+        Parameters
+        ----------
+        helper : _HandlerHelper
+            Helper used to access the connection handling threads.
+        manager : PipelineManager
+            Manager used to access the worker threads serving UI detection pipeline
+            modules.
+        """
         term_signals = (signal.SIGTERM, signal.SIGINT, signal.SIGQUIT)
 
         def _exit(signum: int, _):
@@ -461,9 +411,24 @@ class ConnectionHandler:
             signal.signal(sig, _exit)
 
     def get_name(self) -> str:
+        """Gets the name of this instance
+
+        Returns
+        -------
+        str
+            Name of this instance.
+        """
         return self.name + str(self.key)
 
     def terminate(self, force: bool = False):
+        """Terminates the connection handler process
+
+        Parameters
+        ----------
+        force : bool
+            Whether to immediately stop the process. If `False`, waits until all the
+            preceding jobs are handled.
+        """
         if self._process is None:
             raise ValueError("The handler process has not started.")
         if force:
