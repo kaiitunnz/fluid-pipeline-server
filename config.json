@@ -23,9 +23,12 @@
     }
   },
   "ui_matcher": {
-    "method": "iou",
+    "method": "gist",
     "is_thread": false,
-    "args": { "iou_threshold": 0.6 }
+    "args": {
+      "iou_threshold": 0.3,
+      "similarity_threshold": 0.8
+    }
   },
   "text_recognizer": {
     "dummy": true,
