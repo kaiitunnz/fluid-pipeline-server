@@ -2,6 +2,7 @@ import os
 import signal
 import time
 from multiprocessing.pool import Pool, ThreadPool
+from threading import Semaphore
 from typing import Any, Optional
 
 import numpy as np
@@ -30,7 +31,7 @@ class PipelineServer(IPipelineServer):
     ----------
     hostname : str
         Host name.
-    port : str
+    port : int
         Port to listen to client connections.
     socket : Optional[sock.socket]
         Server socket.
@@ -63,12 +64,13 @@ class PipelineServer(IPipelineServer):
     logger: DefaultLogger
     benchmarker: Optional[Benchmarker]
     manager: PipelineManager
+    _exit_sema: Semaphore  # To handle terminating signals only once
 
     def __init__(
         self,
         *,
         hostname: str,
-        port: str,
+        port: int,
         pipeline: UiDetectionPipeline,
         chunk_size: int = -1,
         max_image_size: int = -1,
@@ -84,7 +86,7 @@ class PipelineServer(IPipelineServer):
         ----------
         hostname : str
             Host name.
-        port : str
+        port : int
             Port to listen to client connections.
         pipeline: UiDetectionPipeline
             Instance of the UI detection pipeline.
@@ -112,6 +114,7 @@ class PipelineServer(IPipelineServer):
         self.num_workers = num_workers
         self.verbose = verbose
         self.test_mode = test_mode
+        self._exit_sema = Semaphore(1)
 
         benchmark_metrics = [
             "Waiting time",
@@ -126,7 +129,9 @@ class PipelineServer(IPipelineServer):
             else None
         )
 
-        self.manager = PipelineManager(pipeline, self.logger, self.benchmarker)
+        self.manager = PipelineManager(
+            pipeline, self.logger, self.benchmarker, self.getpid()
+        )
 
         if len(kwargs) > 0:
             self.logger.warn(f"Got unexpected arguments: {kwargs}")
@@ -150,9 +155,6 @@ class PipelineServer(IPipelineServer):
 
         with ThreadPool(processes=self.num_workers) as pool:
             self._register_signal_handlers(pool)
-            self.logger.info(
-                f'Pipeline server started serving at "{self.hostname}:{self.port} (PID={os.getpid()})".'
-            )
             job_no = 0
             while True:
                 conn, addr = self.socket.accept()
@@ -183,9 +185,7 @@ class PipelineServer(IPipelineServer):
         """
 
         def on_error(message: str, info: Any):
-            self.logger.error(message)
-            self.logger.debug("Cause:")
-            self.logger.debug(str(info))
+            self.logger.error(f"{message} | Cause: {str(info)}")
 
         name = self.manager.name
         success = True
@@ -250,6 +250,8 @@ class PipelineServer(IPipelineServer):
         term_signals = (signal.SIGTERM, signal.SIGINT, signal.SIGQUIT)
 
         def _exit(signum: int, _):
+            if not self._exit_sema.acquire(blocking=False):
+                return
             self.logger.info(
                 f"Termination signal received: {signal.Signals(signum).name}"
             )

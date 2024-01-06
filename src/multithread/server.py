@@ -2,6 +2,7 @@ import os
 import signal
 import time
 from multiprocessing.pool import Pool, ThreadPool
+from threading import Semaphore
 from typing import Any, Optional
 
 from PIL import ImageFile  # type: ignore
@@ -29,7 +30,7 @@ class PipelineServer(IPipelineServer):
     ----------
     hostname : str
         Host name.
-    port : str
+    port : int
         Port to listen to client connections.
     socket : Optional[sock.socket]
         Server socket.
@@ -56,12 +57,13 @@ class PipelineServer(IPipelineServer):
     verbose: bool
     logger: DefaultLogger
     benchmarker: Optional[Benchmarker]
+    _exit_sema: Semaphore  # To handle terminating signals only once
 
     def __init__(
         self,
         *,
         hostname: str,
-        port: str,
+        port: int,
         pipeline: PipelineConstructor,
         chunk_size: int = -1,
         max_image_size: int = -1,
@@ -77,7 +79,7 @@ class PipelineServer(IPipelineServer):
         ----------
         hostname : str
             Host name.
-        port : str
+        port : int
             Port to listen to client connections.
         pipeline: PipelineConstructor
             Constructor of the UI detection pipeline.
@@ -105,6 +107,7 @@ class PipelineServer(IPipelineServer):
         self.num_workers = num_workers
         self.num_instances = num_instances
         self.verbose = verbose
+        self._exit_sema = Semaphore(1)
 
         self.benchmarker = (
             Benchmarker(
@@ -130,12 +133,18 @@ class PipelineServer(IPipelineServer):
         self.logger.info("Starting the pipeline server...")
 
         manager = PipelineManager(
-            self.pipeline, self.logger, self.benchmarker, self.num_instances
+            self.pipeline,
+            self.logger,
+            self.benchmarker,
+            self.getpid(),
+            self.num_instances,
         )
-        manager.start()
 
         with ThreadPool(processes=self.num_workers) as pool:
             self._register_signal_handlers(pool, manager)
+
+            manager.start()
+
             if warmup_image is not None:
                 self._warmup(manager, warmup_image)
 
@@ -173,9 +182,7 @@ class PipelineServer(IPipelineServer):
         """
 
         def on_error(message: str, info: Any):
-            self.logger.error(message)
-            self.logger.debug("Cause:")
-            self.logger.debug(str(info))
+            self.logger.error(f"{message} | Cause: {str(info)}")
 
         success = True
         for i in range(self.num_instances):
@@ -204,6 +211,8 @@ class PipelineServer(IPipelineServer):
         term_signals = (signal.SIGTERM, signal.SIGINT, signal.SIGQUIT)
 
         def _exit(signum: int, _):
+            if not self._exit_sema.acquire(blocking=False):
+                return
             self.logger.info(
                 f"Termination signal received: {signal.Signals(signum).name}"
             )

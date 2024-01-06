@@ -64,11 +64,14 @@ class PipelineManager:
     benchmarker: Optional[Benchmarker]
     name: str
 
+    _server_pid: int
+
     def __init__(
         self,
         pipeline: UiDetectionPipeline,
         logger: DefaultLogger,
         benchmarker: Optional[Benchmarker],
+        server_pid: int,
         name: str = "Pipeline",
     ):
         """
@@ -80,6 +83,8 @@ class PipelineManager:
             Logger to log the UI detection process.
         benchmarker : Optional[Benchmarker]
             Benchmarker to benchmark the UI detection pipeline server.
+        server_pid : int
+            Process ID of the pipeline server.
         name : str
             Name of the instance, used to identify itself in the server log.
         """
@@ -87,12 +92,18 @@ class PipelineManager:
         self.pipeline_ch = SimpleQueue()
         self.logger = logger
         self.benchmarker = benchmarker
+        self._server_pid = server_pid
         self.name = name
 
     def start(self):
         """Starts the UI detection pipeline's worker thread"""
         self.worker = Worker(
-            detect, self.pipeline_ch, self.pipeline, self.logger, self.name
+            detect,
+            self.pipeline_ch,
+            self.pipeline,
+            self.logger,
+            self._server_pid,
+            self.name,
         )
         self.worker.start()
 

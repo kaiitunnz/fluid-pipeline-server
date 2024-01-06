@@ -33,7 +33,7 @@ class PipelineServer(IPipelineServer):
     ----------
     hostname : str
         Host name.
-    port : str
+    port : int
         Port to listen to client connections.
     socket : Optional[sock.socket]
         Server socket.
@@ -64,13 +64,13 @@ class PipelineServer(IPipelineServer):
     benchmarker: Optional[Benchmarker]
 
     handlers: List[ConnectionHandler]
-    _exit_sema: Semaphore = Semaphore(1)  # To handle terminating signals only once
+    _exit_sema: Semaphore  # To handle terminating signals only once
 
     def __init__(
         self,
         *,
         hostname: str,
-        port: str,
+        port: int,
         pipeline: PipelineConstructor,
         chunk_size: int = -1,
         max_image_size: int = -1,
@@ -86,7 +86,7 @@ class PipelineServer(IPipelineServer):
         ----------
         hostname : str
             Host name.
-        port : str
+        port : int
             Port to listen to client connections.
         pipeline: PipelineConstructor
             Constructor of the UI detection pipeline.
@@ -116,6 +116,7 @@ class PipelineServer(IPipelineServer):
         self.num_instances = num_instances
         self.verbose = verbose
         self.handlers = []
+        self._exit_sema = Semaphore(1)
 
         self.benchmarker = (
             Benchmarker(
@@ -161,6 +162,7 @@ class PipelineServer(IPipelineServer):
                     None
                     if benchmark_listener is None
                     else benchmark_listener.get_benchmarker(),
+                    self.getpid(),
                     self.chunk_size,
                     self.max_image_size,
                 )

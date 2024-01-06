@@ -44,6 +44,8 @@ class PipelineManagerHelper:
     benchmarker: Optional[Benchmarker]
 
     num_instances: int
+
+    _server_pid: int
     _count: int
 
     def __init__(
@@ -52,6 +54,7 @@ class PipelineManagerHelper:
         logger: DefaultLogger,
         benchmarker: Optional[Benchmarker],
         num_instances: int,
+        server_pid: int,
     ):
         """
         Parameters
@@ -65,11 +68,14 @@ class PipelineManagerHelper:
             benchmark the server.
         num_instances : int
             Number of instances of the UI detection pipeline.
+        server_pid : int
+            Process ID of the pipeline server.
         """
         self.channels = {}
         self.num_instances = num_instances
         self.logger = logger
         self.benchmarker = benchmarker
+        self._server_pid = server_pid
 
         for name, module in constructor.modules.items():
             self.channels[name] = self._create_module_instances(name, module)
@@ -99,7 +105,12 @@ class PipelineManagerHelper:
         """
         workers = [
             Worker(
-                module.func, SimpleQueue(), module(), self.logger, name.value + str(i)
+                module.func,
+                SimpleQueue(),
+                module,
+                self.logger,
+                self._server_pid,
+                name.value + str(i),
             )
             for i in range(self.num_instances)
         ]

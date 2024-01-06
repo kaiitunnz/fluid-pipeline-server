@@ -92,10 +92,13 @@ def run_server(
 ) -> mp.Process:
     def run():
         sample_file = config["server"].pop("sample_file")
-        server_ = init_pipeline_server(config, mode, verbose, benchmark_file)
-        server_.on_ready = lambda: on_ready(cond, is_ready)
-        server_.on_failure = lambda: on_ready(cond, is_ready)
-        server_.start(sample_file)
+        on_failure_ = lambda: on_failure(cond, is_ready)
+        server = init_pipeline_server(
+            config, mode, verbose, benchmark_file, on_failure_
+        )
+        server._on_ready = lambda: on_ready(cond, is_ready)
+        server._on_failure = on_failure_
+        server.start(sample_file)
 
     process = mp.Process(target=run)
     process.start()

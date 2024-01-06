@@ -189,12 +189,12 @@ class ConnectionHandler:
     chunk_size: int
     max_image_size: int
 
+    _server_pid: int
     _job_queue: SimpleQueue
     _process: Optional[mp.Process]
-    _ready_sema: Semaphore = mp.Semaphore(0)
-    _is_ready = mp.Value("i", 0, lock=False)
-    # To handle terminating signals only once
-    _exit_sema: threading.Semaphore = threading.Semaphore(1)
+    _ready_sema: Semaphore
+    _is_ready: Any
+    _exit_sema: threading.Semaphore  # To handle terminating signals only once
 
     def __init__(
         self,
@@ -204,6 +204,7 @@ class ConnectionHandler:
         num_workers: int,
         logger: Logger,
         benchmarker: Optional[Benchmarker],
+        server_pid: int,
         chunk_size: int,
         max_image_size: int,
         name: str = CLS,
@@ -224,6 +225,8 @@ class ConnectionHandler:
             Logger to log the UI detection process.
         benchmarker : Optional[Benchmarker]
             Benchmarker for benchmarking the UI detection pipeline server.
+        server_pid : int
+            Process ID of the pipeline server.
         chunk_size : int
             Chunk size for reading bytes from the sockets.
         max_image_size : int
@@ -240,8 +243,12 @@ class ConnectionHandler:
         self.chunk_size = chunk_size
         self.max_image_size = max_image_size
 
+        self._server_pid = server_pid
         self._job_queue = job_queue
         self._process = None
+        self._ready_sema = mp.Semaphore(0)
+        self._is_ready = mp.Value("i", 0, lock=False)
+        self._exit_sema: threading.Semaphore = threading.Semaphore(1)
 
     def start(self, warmup_image: Optional[str] = None):
         """Starts the connection handler process
@@ -276,6 +283,7 @@ class ConnectionHandler:
             self.constructor,
             self.logger,
             self.benchmarker,
+            self._server_pid,
         )
         handler_helper = _HandlerHelper(
             manager.get_helper(),
@@ -429,6 +437,10 @@ class ConnectionHandler:
             raise ValueError("The handler process has not started.")
         if force:
             self._process.terminate()
+            self._process.join(2)
+            if self._process.exitcode is None:
+                self.logger.debug(f"[{self.get_name()}] Joining timeout.")
+            self._process.kill()
         else:
             self._job_queue.put(None)
         self._process.join()

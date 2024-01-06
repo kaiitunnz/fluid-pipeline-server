@@ -2,7 +2,7 @@ import json
 import os
 import sys
 from argparse import ArgumentParser, Namespace
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Callable, Optional
 
 import torch
 
@@ -176,10 +176,19 @@ def constructor_from_config(config: Dict[str, Any]) -> PipelineConstructor:
 
 
 def init_pipeline_server(
-    config: Dict[str, Any], mode: str, verbose: bool, benchmark: Optional[str]
+    config: Dict[str, Any],
+    mode: str,
+    verbose: bool,
+    benchmark: Optional[str],
+    on_failure: Optional[Callable[[], Any]] = None,
 ) -> IPipelineServer:
     if mode == "sequential":
-        pipeline = pipeline_from_config(config)
+        try:
+            pipeline = pipeline_from_config(config)
+        except Exception as e:
+            if on_failure is not None:
+                on_failure()
+            raise e
         pipeline_server = SequentialServer(
             **config["server"],
             pipeline=pipeline,

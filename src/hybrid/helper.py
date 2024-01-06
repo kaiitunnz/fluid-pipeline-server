@@ -33,6 +33,8 @@ class PipelineManagerHelper:
     benchmarker : Optional[Benchmarker]
         Benchmarker to benchmark the UI detection pipeline server. `None` to not
         benchmark the server.
+    server_pid : int
+        Process ID of the pipeline server.
     """
 
     key: int
@@ -44,6 +46,7 @@ class PipelineManagerHelper:
     logger: Logger
     benchmarker: Optional[Benchmarker]
 
+    _server_pid: int
     _count: int
 
     def __init__(
@@ -52,6 +55,7 @@ class PipelineManagerHelper:
         constructor: PipelineConstructor,
         logger: Logger,
         benchmarker: Optional[Benchmarker],
+        server_pid: int,
     ):
         """
         Parameters
@@ -66,11 +70,14 @@ class PipelineManagerHelper:
         benchmarker : Optional[Benchmarker]
             Benchmarker to benchmark the UI detection pipeline server. `None` to not
             benchmark the server.
+        server_pid : int
+            Process ID of the pipeline server.
         """
         self.key = key
         self.workers = {}
         self.logger = logger
         self.benchmarker = benchmarker
+        self._server_pid = server_pid
 
         for name, module in constructor.modules.items():
             self.workers[name] = self._create_worker(name, module)
@@ -98,8 +105,9 @@ class PipelineManagerHelper:
         return Worker(
             module.func,
             SimpleQueue(),
-            module(),
+            module,
             self.logger,
+            self._server_pid,
             name.value + str(self.key),
             module.is_thread,
         )

@@ -1,3 +1,5 @@
+import os
+import signal
 import threading
 from queue import SimpleQueue
 from typing import Any, Callable, Optional
@@ -32,7 +34,9 @@ class Worker:
     name: Optional[str]
     module: Any
     logger: DefaultLogger
-    thread: Optional[threading.Thread] = None
+    thread: Optional[threading.Thread]
+
+    _server_pid: int
 
     def __init__(
         self,
@@ -40,6 +44,7 @@ class Worker:
         channel: SimpleQueue,
         module: Any,
         logger: DefaultLogger,
+        server_pid: int,
         name: Optional[str] = None,
     ):
         """
@@ -53,6 +58,8 @@ class Worker:
             UI detection pipeline, used by `func`.
         logger : Logger
             Logger to log its process.
+        server_pid : int
+            Process ID of the pipeline server.
         name : Optional[str]
             Name of the instance, used to identify itself in the server log.
         """
@@ -61,6 +68,8 @@ class Worker:
         self.name = name
         self.module = module
         self.logger = logger
+        self._server_pid = server_pid
+        self.thread = None
 
     def start(self):
         """Creates a pipeline worker thread and starts the worker"""
@@ -79,7 +88,6 @@ class Worker:
         """
         try:
             while True:
-                self.logger.debug(f"[{self.name}] Waiting for a message.")
                 job = self.channel.get()
                 if job is None:
                     raise EOFError
@@ -88,6 +96,9 @@ class Worker:
                 out_channel.put(self.func(*args, module=module))
         except EOFError:
             self.logger.info(f"'{self.name}' worker's channel closed.")
+        except Exception as e:
+            self.logger.error(f"[{self.name}] Fatal error occured: {e}")
+            os.kill(self._server_pid, signal.SIGTERM)
 
     def terminate(self, force: bool = False):
         """Terminates the pipeline worker

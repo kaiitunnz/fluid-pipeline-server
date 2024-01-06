@@ -43,12 +43,15 @@ class PipelineManager:
 
     benchmark_listener: Optional[BenchmarkListener]
 
+    _server_pid: int
+
     def __init__(
         self,
         pipeline: PipelineConstructor,
         manager: SyncManager,
         logger: DefaultLogger,
         benchmarker: Optional[bench.Benchmarker],
+        server_pid: int,
     ):
         """
         Parameters
@@ -62,6 +65,8 @@ class PipelineManager:
         benchmark_listener : Optional[BenchmarkListener]
             Benchmarker to benchmark the UI detection pipeline server. `None` to not
             benchmark the server.
+        server_pid : int
+            Process ID of the pipeline server.
         """
         self.pipeline = pipeline
         self.workers = {}
@@ -72,6 +77,7 @@ class PipelineManager:
             if benchmarker is None
             else BenchmarkListener(benchmarker, manager.Queue(), logger)
         )
+        self._server_pid = server_pid
         self._helper = PipelineManagerHelper(
             pipeline, manager, self.log_listener, self.benchmark_listener
         )
@@ -115,6 +121,7 @@ class PipelineManager:
             self._helper.module_channels[name],
             self._helper.module_pools[name],
             logger,
+            self._server_pid,
             name,
         )
 
@@ -140,15 +147,14 @@ class PipelineManager:
         """
         self.logger.info("Terminating the worker processes...")
 
-        workers = list(self.workers.values()) + [self.log_listener]
-        for worker in workers:
+        for worker in self.workers.values():
             worker.terminate(force)
             self.logger.info(f"'{worker.name}' worker has terminated.")
 
-        optional_workers = (self.benchmark_listener,)
-        for worker in optional_workers:
+        self._helper.close()  # Close the resources used by the pipeline.
+
+        other_workers = (self.log_listener, self.benchmark_listener)
+        for worker in other_workers:
             if worker is not None:
                 worker.terminate(force)
                 self.logger.info(f"'{worker.name}' worker has terminated.")
-
-        self._helper.close()  # Close the resources used by the pipeline.

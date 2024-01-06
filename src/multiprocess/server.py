@@ -1,6 +1,7 @@
 import os
 import signal
 import time
+from threading import Semaphore
 from typing import Any, Optional
 
 import torch
@@ -33,7 +34,7 @@ class PipelineServer(IPipelineServer):
     ----------
     hostname : str
         Host name.
-    port : str
+    port : int
         Port to listen to client connections.
     socket : Optional[sock.socket] = None
         Server socket.
@@ -60,12 +61,13 @@ class PipelineServer(IPipelineServer):
     verbose: bool
     logger: DefaultLogger
     benchmarker: Optional[Benchmarker]
+    _exit_sema: Semaphore  # To handle terminating signals only once
 
     def __init__(
         self,
         *,
         hostname: str,
-        port: str,
+        port: int,
         pipeline: PipelineConstructor,
         chunk_size: int = -1,
         max_image_size: int = -1,
@@ -80,7 +82,7 @@ class PipelineServer(IPipelineServer):
         ----------
         hostname : str
             Host name.
-        port : str
+        port : int
             Port to listen to client connections.
         pipeline : PipelineConstructor
             Constructor of the UI detection pipeline.
@@ -105,6 +107,7 @@ class PipelineServer(IPipelineServer):
         self.max_image_size = max_image_size
         self.num_workers = num_workers
         self.verbose = verbose
+        self._exit_sema = Semaphore(1)
 
         self.benchmarker = (
             Benchmarker(
@@ -138,15 +141,19 @@ class PipelineServer(IPipelineServer):
 
         with tmp.Manager() as sync_manager:
             manager = PipelineManager(
-                self.pipeline, sync_manager, self.logger, self.benchmarker
+                self.pipeline,
+                sync_manager,
+                self.logger,
+                self.benchmarker,
+                self.getpid(),
             )
             manager.start()
 
-            if warmup_image is not None:
-                self._warmup(manager.get_helper(), warmup_image)
-
             with tmp.Pool(processes=self.num_workers) as pool:
                 self._register_signal_handlers(pool, manager)
+
+                if warmup_image is not None:
+                    self._warmup(manager.get_helper(), warmup_image)
 
                 self.socket = self.bind()
 
@@ -182,12 +189,14 @@ class PipelineServer(IPipelineServer):
         """
 
         def on_error(message: str, info: Any):
-            self.logger.error(message)
-            self.logger.debug("Cause:")
-            self.logger.debug(str(info))
+            self.logger.error(f"{message} | Cause: {str(info)}")
 
         name = "Pipeline"
-        success = helper.warmup(warmup_image, name, on_error)
+        try:
+            success = helper.warmup(warmup_image, name, on_error)
+        except Exception as e:
+            success = False
+            on_error("Exception occured when warming up", e)
 
         if success:
             self.logger.debug(f"[{name}] Warm-up complete.")
@@ -213,6 +222,8 @@ class PipelineServer(IPipelineServer):
         term_signals = (signal.SIGTERM, signal.SIGINT, signal.SIGQUIT)
 
         def _exit(signum: int, _):
+            if not self._exit_sema.acquire(blocking=False):
+                return
             self.logger.info(
                 f"Termination signal received: {signal.Signals(signum).name}"
             )

@@ -22,7 +22,10 @@ class Logger(ILogger):
         self._channel = channel
 
     def log(self, level: int, msg: str):
-        self._channel.put((level, msg))
+        try:
+            self._channel.put((level, msg))
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
 
 class LogListener:

@@ -209,9 +209,11 @@ class IPipelineServer:
     """
     An interface of a UI detection pipeline server.
 
+    Attributes
+    ----------
     hostname : str
         Host name.
-    port : str
+    port : int
         Port to listen to client connections.
     socket : Optional[sock.socket]
         Server socket.
@@ -220,41 +222,96 @@ class IPipelineServer:
     """
 
     hostname: str
-    port: str
+    port: int
     socket: Optional[sock.socket]
     logger: ILogger
 
+    _is_ready: bool
+    _pid: int
+
     def __init__(
-        self, hostname: str, port: str, socket: Optional[sock.socket], logger: ILogger
+        self, hostname: str, port: int, socket: Optional[sock.socket], logger: ILogger
     ):
+        """
+        Parameters
+        ----------
+        hostname : str
+            Host name.
+        port : int
+            Port to listen to client connections.
+        socket : Optional[sock.socket]
+            Server socket.
+        logger : ILogger
+            Logger to log the UI detection process.
+        """
         self.hostname = hostname
         self.port = port
         self.socket = socket
         self.logger = logger
+
+        self._is_ready = False
+        self._pid = os.getpid()
+
+    def getpid(self) -> int:
+        """Gets the ID of the pipeline server's main process
+
+        Returns
+        -------
+        int
+            Process ID of the pipeline server
+        """
+        return self._pid
 
     @abstractmethod
     def start(self, _):
         """Starts the server"""
         raise NotImplementedError()
 
-    def on_ready(self):
+    def _on_ready(self):
+        """Callback to be called when the pipeline server is ready to serve"""
         pass
 
-    def on_failure(self):
+    def _on_failure(self):
+        """Callback to be called when the pipeline server fails to start"""
+        pass
+
+    def _on_exit(self):
+        """Callback to be called when the pipeline server exits"""
         pass
 
     def bind(self) -> sock.socket:
+        """Binds a socket to the server's hostname and port
+
+        Other components of the server must be ready to serve prior to calling this
+        function.
+
+        Returns
+        -------
+        socket
+            Server socket.
+        """
         socket = sock.socket(sock.AF_INET, sock.SOCK_STREAM)
         socket.bind((self.hostname, self.port))
         socket.listen(1)
         self.logger.info(
             f'Pipeline server started serving at "{self.hostname}:{self.port} (PID={os.getpid()})".'
         )
-        self.on_ready()
+        self._is_ready = True
+        self._on_ready()
         return socket
 
     def exit(self, code: int):
-        self.on_failure()
+        """Terminates the pipeline server process
+
+        Parameters
+        ----------
+        code : int
+            Exit code.
+        """
+        if self._is_ready:
+            self._on_exit()
+        else:
+            self._on_failure()
         sys.exit(code)
 
     @classmethod

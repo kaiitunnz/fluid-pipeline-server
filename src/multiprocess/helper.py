@@ -212,11 +212,19 @@ class PipelineHelper(IPipelineHelper):
         self.module_channels[target].put((self.key, self._condition, args))
 
     def wait(self, target: PipelineModule) -> List[UiElement]:
-        with self._condition:
+        self._condition.acquire()
+        try:
             self._condition.wait_for(
                 lambda: self.module_pools[target].get(self.key, None) is not None
             )
+            self._condition.release()
             return self.module_pools[target].pop(self.key)
+        except Exception as e:
+            self._condition.release()
+            raise e
 
     def __del__(self):
-        self._manager_conditions.pop(self.key, None)
+        try:
+            self._manager_conditions.pop(self.key, None)
+        except (FileNotFoundError, BrokenPipeError):
+            pass

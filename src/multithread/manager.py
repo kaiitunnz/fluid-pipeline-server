@@ -32,6 +32,7 @@ class PipelineManager:
         pipeline: PipelineConstructor,
         logger: DefaultLogger,
         benchmarker: Optional[Benchmarker],
+        server_pid: int,
         num_instances: int,
     ):
         """
@@ -44,12 +45,14 @@ class PipelineManager:
         benchmarker : Optional[Benchmarker]
             Benchmarker to benchmark the UI detection pipeline server. `None` to not
             benchmark the server.
+        server_pid : int
+            Process ID of the pipeline server.
         num_instances : int
             Number of instances of the UI detection pipeline to be created.
         """
         self.pipeline = pipeline
         self.helper = PipelineManagerHelper(
-            pipeline, logger, benchmarker, num_instances
+            pipeline, logger, benchmarker, num_instances, server_pid
         )
         self.logger = logger
 

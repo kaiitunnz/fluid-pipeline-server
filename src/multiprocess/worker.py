@@ -1,4 +1,5 @@
 import os
+import signal
 import torch.multiprocessing as tmp
 from multiprocessing.managers import DictProxy
 from queue import Queue
@@ -39,7 +40,9 @@ class Worker:
     result_pool: DictProxy
     logger: Logger
     name: Optional[str]
-    process: Optional[tmp.Process] = None
+    process: Optional[tmp.Process]
+
+    _server_pid: int
 
     def __init__(
         self,
@@ -48,6 +51,7 @@ class Worker:
         channel: Queue,
         result_pool: DictProxy,
         logger: Logger,
+        server_pid: int,
         name: Optional[PipelineModule] = None,
     ):
         """
@@ -64,6 +68,8 @@ class Worker:
             key, which can be used by the consumer to retrieve a specific result.
         logger : Logger
             Logger to log its process.
+        server_pid : int
+            Process ID of the pipeline server.
         name: Optional[str]
             Name of the instance, used to identify itself in the server log.
         """
@@ -72,7 +78,9 @@ class Worker:
         self.channel = channel
         self.result_pool = result_pool
         self.logger = logger
+        self._server_pid = server_pid
         self.name = None if name is None else name.value
+        self.process = None
 
     def start(self):
         """Starts the pipeline worker"""
@@ -93,16 +101,19 @@ class Worker:
             Constructor of the pipeline component.
         """
         self.logger.debug(f"[{self.name}] Start serving (PID={os.getpid()}).")
-        module = constructor()
         try:
-            while True:
-                self.logger.debug(f"[{self.name}] Waiting for a message.")
-                key, cond, args = self.channel.get()
-                self.result_pool[key] = self.func(*args, module=module)
-                with cond:
-                    cond.notify()
-        except EOFError:
-            self.logger.info(f"'{self.name}' worker's channel closed.")
+            module = constructor()
+            try:
+                while True:
+                    key, cond, args = self.channel.get()
+                    self.result_pool[key] = self.func(*args, module=module)
+                    with cond:
+                        cond.notify()
+            except EOFError:
+                self.logger.info(f"'{self.name}' worker's channel closed.")
+        except Exception as e:
+            self.logger.error(f"[{self.name}] Fatal error occured: {e}")
+            os.kill(self._server_pid, signal.SIGTERM)
 
     def terminate(self, force: bool = False):
         """Terminates the pipeline worker

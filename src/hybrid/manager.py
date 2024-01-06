@@ -31,12 +31,15 @@ class PipelineManager:
     helper: PipelineManagerHelper
     logger: Logger
 
+    _server_pid: int
+
     def __init__(
         self,
         key: int,
         pipeline: PipelineConstructor,
         logger: Logger,
         benchmarker: Optional[Benchmarker],
+        server_pid: int,
     ):
         """
         Parameters
@@ -51,10 +54,15 @@ class PipelineManager:
         benchmarker : Optional[Benchmarker]
             Benchmarker to benchmark the UI detection pipeline server. `None` to not
             benchmark the server.
+        server_pid : int
+            Process ID of the pipeline server.
         """
         self.pipeline = pipeline
-        self.helper = PipelineManagerHelper(key, pipeline, logger, benchmarker)
+        self.helper = PipelineManagerHelper(
+            key, pipeline, logger, benchmarker, server_pid
+        )
         self.logger = logger
+        self._server_pid = server_pid
 
     def start(self):
         """Starts the UI detection pipeline's worker threads"""

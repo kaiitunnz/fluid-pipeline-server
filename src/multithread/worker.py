@@ -1,7 +1,10 @@
+import os
+import signal
 import threading
 from queue import SimpleQueue
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
+from src.constructor import ModuleConstructor
 from src.logger import ILogger
 
 
@@ -28,16 +31,18 @@ class Worker:
     func: Callable
     channel: SimpleQueue
     name: Optional[str]
-    module: Any
+    constructor: ModuleConstructor
     logger: ILogger
-    _thread: Optional[threading.Thread] = None
+    _server_pid: int
+    _thread: Optional[threading.Thread]
 
     def __init__(
         self,
         func: Callable,
         channel: SimpleQueue,
-        module: Any,
+        constructor: ModuleConstructor,
         logger: ILogger,
+        server_pid: int,
         name: Optional[str] = None,
     ):
         """
@@ -47,27 +52,29 @@ class Worker:
             Function to invoke the pipeline component.
         channel : SimpleQueue
             Channel on which it listens for new jobs.
-        module : Any
-            UI detection pipeline component/module, used by `func`.
+        contructor : ModuleConstructor
+            Constructor of a UI detection pipeline component/module.
         logger : Logger
             Logger to log its process.
+        server_pid : int
+            Process ID of the pipeline server.
         name : Optional[str]
             Name of the instance, used to identify itself in the server log.
         """
         self.func = func
         self.channel = channel
         self.name = name
-        self.module = module
+        self.constructor = constructor
         self.logger = logger
+        self._server_pid = server_pid
+        self._thread = None
 
     def start(self):
         """Creates a pipeline worker thread and starts the worker"""
-        self._thread = threading.Thread(
-            target=self.serve, name=self.name, args=(self.module,), daemon=False
-        )
+        self._thread = threading.Thread(target=self.serve, name=self.name, daemon=False)
         self._thread.start()
 
-    def serve(self, module: Any):
+    def serve(self):
         """Serves the pipeline component
 
         Parameters
@@ -76,16 +83,20 @@ class Worker:
             Pipeline module/component to be served.
         """
         try:
-            while True:
-                self.logger.debug(f"[{self.name}] Waiting for a message.")
-                msg = self.channel.get()
-                if msg is None:
-                    return
-                out_channel, args = msg
-                assert isinstance(out_channel, SimpleQueue)
-                out_channel.put(self.func(*args, module=module))
-        except EOFError:
-            self.logger.info(f"'{self.name}' worker's channel closed.")
+            module = self.constructor()
+            try:
+                while True:
+                    msg = self.channel.get()
+                    if msg is None:
+                        return
+                    out_channel, args = msg
+                    assert isinstance(out_channel, SimpleQueue)
+                    out_channel.put(self.func(*args, module=module))
+            except EOFError:
+                self.logger.info(f"'{self.name}' worker's channel closed.")
+        except Exception as e:
+            self.logger.error(f"[{self.name}] Fatal error occured: {e}")
+            os.kill(self._server_pid, signal.SIGTERM)
 
     def terminate(self, _force: bool = False):
         """Terminates the pipeline worker
