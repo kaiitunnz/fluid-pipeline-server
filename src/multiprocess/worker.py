@@ -110,7 +110,7 @@ class Worker:
                     with cond:
                         cond.notify()
             except EOFError:
-                self.logger.info(f"'{self.name}' worker's channel closed.")
+                self.logger.debug(f"[{self.name}] Channel closed.")
         except Exception as e:
             self.logger.error(f"[{self.name}] Fatal error occured: {e}")
             os.kill(self._server_pid, signal.SIGTERM)
@@ -131,3 +131,4 @@ class Worker:
                 pass
         self.process.terminate()
         self.process.join()
+        self.logger.debug(f"[{self.name}] Terminated.")

@@ -86,6 +86,7 @@ class Worker:
         module : Any
             UI detection pipeline.
         """
+        self.logger.debug(f"[{self.name}] Started serving.")
         try:
             while True:
                 job = self.channel.get()
@@ -95,7 +96,7 @@ class Worker:
                 assert isinstance(out_channel, SimpleQueue)
                 out_channel.put(self.func(*args, module=module))
         except EOFError:
-            self.logger.info(f"'{self.name}' worker's channel closed.")
+            self.logger.debug(f"[{self.name}] Channel closed.")
         except Exception as e:
             self.logger.error(f"[{self.name}] Fatal error occured: {e}")
             os.kill(self._server_pid, signal.SIGTERM)
@@ -116,4 +117,4 @@ class Worker:
                 pass
         self.channel.put(None)
         self.thread.join()
-        self.logger.info(f"'{self.name}' worker has terminated.")
+        self.logger.debug(f"[{self.name}] Terminated.")

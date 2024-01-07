@@ -82,6 +82,7 @@ class Worker:
         module : Any
             Pipeline module/component to be served.
         """
+        self.logger.debug(f"[{self.name}] Started serving.")
         try:
             module = self.constructor()
             try:
@@ -93,7 +94,7 @@ class Worker:
                     assert isinstance(out_channel, SimpleQueue)
                     out_channel.put(self.func(*args, module=module))
             except EOFError:
-                self.logger.info(f"'{self.name}' worker's channel closed.")
+                self.logger.debug(f"[{self.name}] Channel closed.")
         except Exception as e:
             self.logger.error(f"[{self.name}] Fatal error occured: {e}")
             os.kill(self._server_pid, signal.SIGTERM)
@@ -107,3 +108,4 @@ class Worker:
             raise ValueError("The worker thread has not been started.")
         self.channel.put(None)
         self._thread.join()
+        self.logger.debug(f"[{self.name}] Terminated.")

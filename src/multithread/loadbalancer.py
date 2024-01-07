@@ -66,4 +66,3 @@ class LoadBalancer:
         """Terminates the pipeline workers"""
         for worker in self.workers:
             worker.terminate(force)
-            self.logger.info(f"'{worker.name}' worker has terminated.")

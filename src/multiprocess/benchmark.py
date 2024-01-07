@@ -89,7 +89,7 @@ class BenchmarkListener:
                     break
                 self.benchmarker.add(entry)
         except EOFError:
-            self.logger.info(f"'{self.name}' worker's channel closed.")
+            self.logger.debug(f"[{self.name}] Channel closed.")
 
     def get_benchmarker(self):
         """Gets a benchmarker to be sent to worker processes
@@ -108,3 +108,4 @@ class BenchmarkListener:
         except BrokenPipeError:
             pass
         self._thread.join()
+        self.logger.debug(f"[{self.name}] Terminated.")
