@@ -181,6 +181,8 @@ class PipelineServer(IPipelineServer):
                 os.kill(os.getpid(), signal.SIGTERM)
 
         self.socket = self.bind()
+        if self.socket is None:
+            return
 
         job_no = 0
         while True:

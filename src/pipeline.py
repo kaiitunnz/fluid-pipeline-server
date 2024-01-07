@@ -1,5 +1,6 @@
 import logging
 import os
+import signal
 import socket as sock
 import sys
 from abc import abstractmethod
@@ -279,7 +280,7 @@ class IPipelineServer:
         """Callback to be called when the pipeline server exits"""
         pass
 
-    def bind(self) -> sock.socket:
+    def bind(self) -> Optional[sock.socket]:
         """Binds a socket to the server's hostname and port
 
         Other components of the server must be ready to serve prior to calling this
@@ -287,17 +288,22 @@ class IPipelineServer:
 
         Returns
         -------
-        socket
+        Optional[socket]
             Server socket.
         """
-        socket = sock.socket(sock.AF_INET, sock.SOCK_STREAM)
-        socket.bind((self.hostname, self.port))
-        socket.listen(1)
-        self.logger.info(
-            f'Pipeline server started serving at "{self.hostname}:{self.port} (PID={os.getpid()})".'
-        )
-        self._is_ready = True
-        self._on_ready()
+        socket = None
+        try:
+            socket = sock.socket(sock.AF_INET, sock.SOCK_STREAM)
+            socket.bind((self.hostname, self.port))
+            socket.listen(1)
+            self.logger.info(
+                f'Pipeline server started serving at "{self.hostname}:{self.port} (PID={os.getpid()})".'
+            )
+            self._is_ready = True
+            self._on_ready()
+        except OSError as e:
+            self.logger.error(f"Fatal error occurred: {e}")
+            os.kill(self._pid, signal.SIGTERM)
         return socket
 
     def exit(self, code: int):

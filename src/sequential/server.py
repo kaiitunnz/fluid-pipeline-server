@@ -150,11 +150,15 @@ class PipelineServer(IPipelineServer):
         if warmup_image is not None:
             self.warmup(warmup_image)
 
-        self.socket = self.bind()
         self.manager.start()
 
         with ThreadPool(processes=self.num_workers) as pool:
             self._register_signal_handlers(pool)
+
+            self.socket = self.bind()
+            if self.socket is None:
+                return
+
             job_no = 0
             while True:
                 conn, addr = self.socket.accept()

@@ -149,6 +149,8 @@ class PipelineServer(IPipelineServer):
                 self._warmup(manager, warmup_image)
 
             self.socket = self.bind()
+            if self.socket is None:
+                return
 
             job_no = 0
             while True:
