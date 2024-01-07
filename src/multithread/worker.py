@@ -93,15 +93,19 @@ class Worker:
         """
         self.logger.debug(f"[{self.name}] Started serving.")
         try:
-            while True:
-                msg = self.channel.get()
-                if msg is None:
-                    return
-                out_channel, args = msg
-                assert isinstance(out_channel, SimpleQueue)
-                out_channel.put(self.func(*args, module=module))
-        except EOFError:
-            self.logger.debug(f"[{self.name}] Channel closed.")
+            try:
+                while True:
+                    msg = self.channel.get()
+                    if msg is None:
+                        return
+                    out_channel, args = msg
+                    assert isinstance(out_channel, SimpleQueue)
+                    out_channel.put(self.func(*args, module=module))
+            except EOFError:
+                self.logger.debug(f"[{self.name}] Channel closed.")
+        except Exception as e:
+            self.logger.error(f"[{self.name}] Fatal error occured: {e}")
+            os.kill(self._server_pid, signal.SIGTERM)
 
     def terminate(self, _force: bool = False):
         """Terminates the pipeline worker
