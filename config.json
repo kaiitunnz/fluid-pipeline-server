@@ -7,17 +7,17 @@
     "max_image_size": 20971520,
     "num_workers": 2,
     "num_instances": 2,
-    "sample_file": "/media/test/noppanat/pipeline_server/res/sample.jpg"
+    "sample_file": "res/sample.jpg"
   },
   "ui_detector": {
-    "path": "/media/test/noppanat/models/yolo_clay_cpu.pt",
+    "path": "models/ui_detector_yolo.pt",
     "device": "cuda:0"
   },
   "ui_filter": {
     "method": "boundary",
     "dummy": false,
     "args": {
-      "model_path": "/media/test/noppanat/models/ui_filter_boundary.pt",
+      "model_path": "models/ui_filter_boundary.pt",
       "batch_size": 32,
       "device": "cuda:0"
     }
@@ -37,7 +37,7 @@
   "icon_labeler": {
     "dummy": true,
     "args": {
-      "model_path": "/media/test/noppanat/models/efficientnet_op_cpu_migrated.pt",
+      "model_path": "models/icon_labeler_effnet.pt",
       "batch_size": 32,
       "device": "cuda:0"
     }
