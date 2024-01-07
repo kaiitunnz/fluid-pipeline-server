@@ -240,6 +240,15 @@ def main(args: Namespace):
     pipeline_server.start(sample_file)
 
 
+def setup_log(log_path: Optional[str]):
+    if log_path is None:
+        return
+
+    log = open(log_path, "w")
+    sys.stderr = log
+    sys.stdout = log
+
+
 if __name__ == "__main__":
     args = parse_args()
     log_path: Optional[str]
@@ -250,10 +259,5 @@ if __name__ == "__main__":
     else:
         log_path = args.log
 
-    if log_path is None:
-        main(args)
-    else:
-        with open(log_path, "w") as log:
-            sys.stderr = log
-            sys.stdout = log
-            main(args)
+    setup_log(log_path)
+    main(args)
