@@ -174,6 +174,8 @@ class PipelineServer(IPipelineServer):
                             self.max_image_size,
                             self.pipeline.test_mode,
                         ),
+                        callback=lambda _: conn.close(),
+                        error_callback=lambda _: conn.close(),
                     )
 
     def _warmup(self, helper: PipelineHelper, warmup_image: str, kill: bool = True):

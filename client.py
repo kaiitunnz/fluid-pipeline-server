@@ -90,6 +90,8 @@ def request(
     n = int.from_bytes(readall(s, 4, chunk_size), "big", signed=False)
     data = readall(s, n, chunk_size)
 
+    s.close()
+
     # Visualize the results
     return json.loads(data.decode("utf-8"))
 

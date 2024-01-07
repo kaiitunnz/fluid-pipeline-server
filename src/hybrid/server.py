@@ -190,6 +190,7 @@ class PipelineServer(IPipelineServer):
             self.logger.info(f'Got connection from "{addr[0]}:{addr[1]}"')
             job_no += 1
             ConnectionHandler.send(job_queue, job_no, time.time(), conn)
+            conn.close()  # Close the socket as it is sent across a process boundary.
 
     def _register_signal_handlers(
         self,

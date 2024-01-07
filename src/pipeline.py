@@ -301,10 +301,13 @@ class IPipelineServer:
             )
             self._is_ready = True
             self._on_ready()
+            return socket
         except OSError as e:
             self.logger.error(f"Fatal error occurred: {e}")
+            if socket is not None:
+                socket.close()
             os.kill(self._pid, signal.SIGTERM)
-        return socket
+            return None
 
     def exit(self, code: int):
         """Terminates the pipeline server process
