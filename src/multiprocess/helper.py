@@ -226,5 +226,5 @@ class PipelineHelper(IPipelineHelper):
     def __del__(self):
         try:
             self._manager_conditions.pop(self.key, None)
-        except (FileNotFoundError, BrokenPipeError):
+        except (BrokenPipeError, ConnectionRefusedError, FileNotFoundError):
             pass

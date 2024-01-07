@@ -88,7 +88,7 @@ class LogListener:
                 level, msg = received
                 self.logger.log(level, msg)
         except EOFError:
-            self.logger.debug(f"[{self.name}] Channel closed.")
+            pass
 
     def get_logger(self) -> Logger:
         """Gets the logger to be used by other processes"""
@@ -104,4 +104,3 @@ class LogListener:
         except BrokenPipeError:
             pass
         self._thread.join()
-        self.logger.debug(f"[{self.name}] Terminated.")

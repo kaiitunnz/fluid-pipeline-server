@@ -436,7 +436,7 @@ class ConnectionHandler:
             preceding jobs are handled.
         """
         if self._process is None:
-            raise ValueError("The handler process has not started.")
+            return
         if force:
             self._process.terminate()
             self._process.join(2)

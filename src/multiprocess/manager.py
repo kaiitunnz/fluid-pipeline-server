@@ -147,12 +147,14 @@ class PipelineManager:
         """
         self.logger.info("Terminating the worker processes...")
 
+        self._helper.close()  # Close the resources used by the pipeline.
+
         for worker in self.workers.values():
             worker.terminate(force)
-
-        self._helper.close()  # Close the resources used by the pipeline.
+            self.logger.debug(f"[{worker.name}] Terminated.")
 
         other_workers = (self.log_listener, self.benchmark_listener)
         for other_worker in other_workers:
             if other_worker is not None:
                 other_worker.terminate(force)
+                self.logger.debug(f"[{other_worker.name}] Terminated.")

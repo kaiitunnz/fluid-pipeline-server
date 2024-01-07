@@ -2,7 +2,7 @@ import os
 import signal
 import threading
 from queue import SimpleQueue
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from src.constructor import ModuleConstructor
 from src.logger import ILogger
@@ -71,10 +71,19 @@ class Worker:
 
     def start(self):
         """Creates a pipeline worker thread and starts the worker"""
-        self._thread = threading.Thread(target=self.serve, name=self.name, daemon=False)
+        try:
+            module = self.constructor()
+        except Exception as e:
+            self.logger.error(f"[{self.name}] Fatal error occured: {e}")
+            os.kill(self._server_pid, signal.SIGTERM)
+            return
+
+        self._thread = threading.Thread(
+            target=self.serve, name=self.name, args=(module,), daemon=False
+        )
         self._thread.start()
 
-    def serve(self):
+    def serve(self, module: Any):
         """Serves the pipeline component
 
         Parameters
@@ -84,20 +93,15 @@ class Worker:
         """
         self.logger.debug(f"[{self.name}] Started serving.")
         try:
-            module = self.constructor()
-            try:
-                while True:
-                    msg = self.channel.get()
-                    if msg is None:
-                        return
-                    out_channel, args = msg
-                    assert isinstance(out_channel, SimpleQueue)
-                    out_channel.put(self.func(*args, module=module))
-            except EOFError:
-                self.logger.debug(f"[{self.name}] Channel closed.")
-        except Exception as e:
-            self.logger.error(f"[{self.name}] Fatal error occured: {e}")
-            os.kill(self._server_pid, signal.SIGTERM)
+            while True:
+                msg = self.channel.get()
+                if msg is None:
+                    return
+                out_channel, args = msg
+                assert isinstance(out_channel, SimpleQueue)
+                out_channel.put(self.func(*args, module=module))
+        except EOFError:
+            self.logger.debug(f"[{self.name}] Channel closed.")
 
     def terminate(self, _force: bool = False):
         """Terminates the pipeline worker
@@ -105,7 +109,7 @@ class Worker:
         It waits until all the pending work finishes.
         """
         if self._thread is None:
-            raise ValueError("The worker thread has not been started.")
+            return
         self.channel.put(None)
         self._thread.join()
         self.logger.debug(f"[{self.name}] Terminated.")

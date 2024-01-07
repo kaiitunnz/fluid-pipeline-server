@@ -122,7 +122,7 @@ class Worker:
             self.logger.debug(f"[{self.name}] Terminated.")
             return
         if self._thread is None:
-            raise ValueError("The worker thread has not been started.")
+            return
         self.channel.put(None)
         self._thread.join()
         self.logger.debug(f"[{self.name}] Terminated.")

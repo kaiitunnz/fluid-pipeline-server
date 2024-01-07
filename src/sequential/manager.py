@@ -135,4 +135,3 @@ class PipelineManager:
         """
         self.logger.info("Terminating the worker processes...")
         self.worker.terminate(force)
-        self.logger.info("Done.")

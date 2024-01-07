@@ -125,7 +125,7 @@ class Worker:
             the pending jobs to finish.
         """
         if self.process is None:
-            raise ValueError("The worker process has not been started.")
+            return
         if not force:
             while not self.channel.empty():
                 pass
