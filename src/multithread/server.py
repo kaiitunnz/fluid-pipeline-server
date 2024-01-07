@@ -221,6 +221,8 @@ class PipelineServer(IPipelineServer):
             pool.close()
             pool.join()
             manager.terminate(True)
+            if self.socket is not None:
+                self.socket.close()
             self.logger.info("Server successfully exited.")
             self.exit(0)
 

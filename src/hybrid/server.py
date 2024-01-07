@@ -219,6 +219,8 @@ class PipelineServer(IPipelineServer):
             log_listener.terminate(True)
             if benchmark_listener is not None:
                 benchmark_listener.terminate(True)
+            if self.socket is not None:
+                self.socket.close()
             self.logger.info("Server exited successfully.")
             self.exit(0)
 
