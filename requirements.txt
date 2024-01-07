@@ -1,4 +1,4 @@
-fluid_ai==1.0.0
+fluid_ai @ git+https://github.com/kaiitunnz/fluid-ai
 numpy==1.26.3
 pandas==2.1.4
 Pillow==10.2.0
