@@ -10,7 +10,7 @@ from src.benchmark import BENCHMARK_METRICS, Benchmarker
 from src.constructor import PipelineConstructor
 from src.logger import DefaultLogger
 from src.hybrid.benchmark import BenchmarkListener
-from src.hybrid.handler import ConnectionHandler
+from src.hybrid.handler import ConnectionHandler, Job
 from src.hybrid.logger import LogListener
 from src.pipeline import IPipelineServer
 
@@ -143,7 +143,7 @@ class PipelineServer(IPipelineServer):
 
         # Use SimpleQueue instead of Queue, which has its own finalizer
         # that closes itself before all log events are acknowledged.
-        job_queue = mp.SimpleQueue()
+        job_queue: mp.SimpleQueue[Optional[Job]] = mp.SimpleQueue()
         log_listener = LogListener(self.logger, mp.SimpleQueue())
         benchmark_listener = (
             None

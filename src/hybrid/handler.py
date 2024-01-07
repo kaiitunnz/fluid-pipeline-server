@@ -8,13 +8,15 @@ from multiprocessing.queues import SimpleQueue
 from multiprocessing.synchronize import Semaphore
 from queue import Queue
 from threading import Thread
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Tuple
 
 from src.constructor import PipelineConstructor
 from src.hybrid.benchmark import Benchmarker
 from src.hybrid.helper import PipelineHelper
 from src.hybrid.logger import Logger
 from src.hybrid.manager import PipelineManager
+
+Job = Tuple[int, float, sock.socket]
 
 
 class _HandlerHelper:
@@ -190,7 +192,7 @@ class ConnectionHandler:
     max_image_size: int
 
     _server_pid: int
-    _job_queue: SimpleQueue
+    _job_queue: SimpleQueue[Optional[Job]]
     _process: Optional[mp.Process]
     _ready_sema: Semaphore
     _is_ready: Any
@@ -200,7 +202,7 @@ class ConnectionHandler:
         self,
         key: int,
         constructor: PipelineConstructor,
-        job_queue: SimpleQueue,
+        job_queue: SimpleQueue[Optional[Job]],
         num_workers: int,
         logger: Logger,
         benchmarker: Optional[Benchmarker],
@@ -217,7 +219,7 @@ class ConnectionHandler:
             of this class.
         constructor : PipelineConstructor
             Constructor of the UI detection pipeline to be served.
-        job_queue : SimpleQueue
+        job_queue : SimpleQueue[Optional[Job]]
             Queue on which to listen for new jobs.
         num_workers : int
             Number of worker threads in the pool to handle incoming requests.

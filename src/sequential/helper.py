@@ -1,6 +1,6 @@
 import time
 from queue import SimpleQueue
-from typing import List, Literal, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from numpy import ndarray
 from fluid_ai.base import UiElement
@@ -59,10 +59,10 @@ class PipelineHelper(IPipelineHelper):
         self._channel = pipeline_ch
         self._res_channel = SimpleQueue()
 
-    def send(self, _: Literal[PipelineModule.DETECTOR], *args):
+    def send(self, _: PipelineModule, *args):
         self._channel.put((self._res_channel, args))
 
-    def wait(self, _: Literal[PipelineModule.DETECTOR]) -> List[UiElement]:
+    def wait(self, _: PipelineModule) -> List[UiElement]:
         return self._res_channel.get()
 
     def process(

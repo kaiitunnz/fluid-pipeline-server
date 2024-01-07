@@ -6,13 +6,12 @@ from typing import Any, Dict, Callable, Optional
 
 import torch
 
-sys.path.append(os.environ["FLUID_AI_PATH"])
-
 from fluid_ai.icon import BaseIconLabeler, ClassifierIconLabeler, DummyIconLabeler
 from fluid_ai.ocr import BaseOCR, DummyOCR, EasyOCR
 from fluid_ai.pipeline import UiDetectionPipeline
 from fluid_ai.ui.detection import YoloUiDetector
 from fluid_ai.ui.filter import (
+    BaseUiFilter,
     BoundaryUiFilter,
     DummyUiFilter,
     ElementUiFilter,
@@ -63,6 +62,7 @@ def pipeline_from_config(config: Dict[str, Any]) -> UiDetectionPipeline:
         device=torch.device(config["ui_detector"]["device"]),
     )
 
+    filter: BaseUiFilter
     if config["ui_filter"]["dummy"]:
         filter = DummyUiFilter()
     else:
@@ -182,6 +182,7 @@ def init_pipeline_server(
     benchmark: Optional[str],
     on_failure: Optional[Callable[[], Any]] = None,
 ) -> IPipelineServer:
+    pipeline_server: IPipelineServer
     if mode == "sequential":
         try:
             pipeline = pipeline_from_config(config)

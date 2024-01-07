@@ -8,8 +8,6 @@ from ctypes import c_int
 from multiprocessing.synchronize import Condition
 from typing import Any, Dict, Optional
 
-sys.path.append(os.environ["FLUID_AI_PATH"])
-
 from argparse import ArgumentParser, Namespace
 from fluid_ai.utils import plot_ui_elements
 

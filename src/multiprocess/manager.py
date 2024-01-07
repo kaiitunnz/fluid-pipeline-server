@@ -153,6 +153,6 @@ class PipelineManager:
         self._helper.close()  # Close the resources used by the pipeline.
 
         other_workers = (self.log_listener, self.benchmark_listener)
-        for worker in other_workers:
-            if worker is not None:
-                worker.terminate(force)
+        for other_worker in other_workers:
+            if other_worker is not None:
+                other_worker.terminate(force)

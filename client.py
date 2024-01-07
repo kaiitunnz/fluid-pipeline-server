@@ -10,8 +10,6 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 from PIL import Image  # type: ignore
 
-sys.path.append(os.environ["FLUID_AI_PATH"])
-
 from fluid_ai.base import UiElement
 from fluid_ai.utils import plot_ui_elements
 
