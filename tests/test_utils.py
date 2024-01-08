@@ -1,3 +1,4 @@
+import json
 import multiprocessing as mp
 import os
 from PIL import Image
@@ -62,6 +63,9 @@ def run_server(
         sample_file = config["server"].pop("sample_file")
         log_path = config["test"].get("log_path")
         setup_log(log_path)
+        print("Running a server with the following config:")
+        print(json.dumps(config, indent=4), flush=True)
+        print()
         on_failure_ = lambda: on_failure(cond, is_ready)
         server = init_pipeline_server(
             config, mode, verbose, benchmark_file, on_failure_
@@ -108,10 +112,11 @@ def test_server(
             elems = parse_results(img, results)
             if result_dir is not None:
                 os.makedirs(result_dir, exist_ok=True)
+                fname = config["test"]["result_fname"]
                 plot_ui_elements(
-                    img, elems, scale, os.path.join(result_dir, f"{mode}.jpg")
+                    img, elems, scale, os.path.join(result_dir, f"{fname}.jpg")
                 )
-                print_ui_info(elems, os.path.join(result_dir, f"{mode}.txt"))
+                print_ui_info(elems, os.path.join(result_dir, f"{fname}.txt"))
         except Exception:
             success = False
 

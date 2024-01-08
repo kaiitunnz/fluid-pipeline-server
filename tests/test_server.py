@@ -30,12 +30,23 @@ class TestPipelineServer(unittest.TestCase):
         self.config["test"] = {}
         self.config["server"]["port"] += tu.server_count
 
-    def get_test_config(self, num_instances: Optional[int] = None) -> Dict[str, Any]:
+    def get_test_config(
+        self, num_instances: Optional[int] = None, full: Optional[bool] = None
+    ) -> Dict[str, Any]:
+        assert self.mode is not None
+
         new_config = copy.deepcopy(self.config)
         if cf.SERVER_LOG_DIR is not None:
+            if full is None:
+                fname = self.mode
+            elif full:
+                fname = f"full_{self.mode}"
+            else:
+                fname = f"lite_{self.mode}"
             new_config["test"]["log_path"] = os.path.join(
-                cf.SERVER_LOG_DIR, f"{self.mode}.log"
+                cf.SERVER_LOG_DIR, f"{fname}.log"
             )
+            new_config["test"]["result_fname"] = fname
         if num_instances is not None:
             new_config["test"]["num_instances"] = num_instances
         return new_config
@@ -89,17 +100,55 @@ class TestPipelineServer(unittest.TestCase):
         self.assertFalse(success)
 
 
-class TestHybridServer(TestPipelineServer):
+class TestFullServer(TestPipelineServer):
+    def get_test_config(
+        self, num_instances: Optional[int] = None, _full: Optional[bool] = None
+    ) -> Dict[str, Any]:
+        config = super().get_test_config(num_instances, True)
+        config["ui_filter"]["dummy"] = False
+        config["text_recognizer"]["dummy"] = False
+        config["icon_labeler"]["dummy"] = False
+        return config
+
+
+class TestLiteServer(TestPipelineServer):
+    def get_test_config(
+        self, num_instances: Optional[int] = None, _full: Optional[bool] = None
+    ) -> Dict[str, Any]:
+        config = super().get_test_config(num_instances, False)
+        config["ui_filter"]["dummy"] = False
+        config["text_recognizer"]["dummy"] = True
+        config["icon_labeler"]["dummy"] = True
+        return config
+
+
+class TestFullHybridServer(TestFullServer):
     mode: str = "hybrid"
 
 
-class TestMultiprocessServer(TestPipelineServer):
+class TestFullMultiprocessServer(TestFullServer):
     mode: str = "multiprocess"
 
 
-class TestMultithreadServer(TestPipelineServer):
+class TestFullMultithreadServer(TestFullServer):
     mode: str = "multithread"
 
 
-class TestSequentialServer(TestPipelineServer):
+class TestFullSequentialServer(TestFullServer):
+    mode: str = "sequential"
+
+
+class TestLiteHybridServer(TestLiteServer):
+    mode: str = "hybrid"
+
+
+class TestLiteMultiprocessServer(TestLiteServer):
+    mode: str = "multiprocess"
+
+
+class TestLiteMultithreadServer(TestLiteServer):
+    mode: str = "multithread"
+
+
+class TestLiteSequentialServer(TestLiteServer):
     mode: str = "sequential"

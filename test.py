@@ -1,11 +1,6 @@
 import unittest
 
-from tests.test_server import (
-    TestHybridServer,
-    TestMultiprocessServer,
-    TestMultithreadServer,
-    TestSequentialServer,
-)
+from tests import *
 
 
 if __name__ == "__main__":
