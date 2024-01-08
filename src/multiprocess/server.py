@@ -231,7 +231,7 @@ class PipelineServer(IPipelineServer):
             self.logger.info(
                 f"Termination signal received: {signal.Signals(signum).name}"
             )
-            pool.close()
+            pool.terminate()
             pool.join()
             manager.terminate(force=True)
             if self.socket is not None:
