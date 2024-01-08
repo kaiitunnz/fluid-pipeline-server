@@ -11,6 +11,11 @@ from tests import test_addr_in_use, test_basic, test_cuda_oom
 class TestPipelineServer(unittest.TestCase):
     config: Dict[str, Any]
     mode: Optional[str] = None
+    full: Optional[bool] = None
+    default_test_config: Dict[str, Any] = {
+        "server_timeout": cf.SERVER_TIMEOUT,
+        "socket_timeout": cf.SOCKET_TIMEOUT,
+    }
 
     @classmethod
     def setUpClass(cls):
@@ -30,16 +35,16 @@ class TestPipelineServer(unittest.TestCase):
         self.config["test"] = {}
         self.config["server"]["port"] += tu.server_count
 
-    def get_test_config(
-        self, num_instances: Optional[int] = None, full: Optional[bool] = None
-    ) -> Dict[str, Any]:
+    def get_test_config(self, **kwargs) -> Dict[str, Any]:
         assert self.mode is not None
 
         new_config = copy.deepcopy(self.config)
+        default_test_config = copy.deepcopy(self.default_test_config)
+
         if cf.SERVER_LOG_DIR is not None:
-            if full is None:
+            if self.full is None:
                 fname = self.mode
-            elif full:
+            elif self.full:
                 fname = f"full_{self.mode}"
             else:
                 fname = f"lite_{self.mode}"
@@ -47,14 +52,14 @@ class TestPipelineServer(unittest.TestCase):
                 cf.SERVER_LOG_DIR, f"{fname}.log"
             )
             new_config["test"]["result_fname"] = fname
-        if num_instances is not None:
-            new_config["test"]["num_instances"] = num_instances
+
+        new_config["test"].update(default_test_config | kwargs)
         return new_config
 
     def test_basic(self):
         assert self.mode is not None
 
-        success = test_basic.test(
+        result = test_basic.test(
             self.get_test_config(),
             self.mode,
             cf.VERBOSE,
@@ -65,13 +70,13 @@ class TestPipelineServer(unittest.TestCase):
             cf.SCALE,
             cf.TEST_RESULTS_DIR,
         )
-        self.assertTrue(success)
+        self.assertTrue(result.assert_true(), result.error)
 
     def test_cuda_oom(self):
         assert self.mode is not None
 
-        success = test_cuda_oom.test(
-            self.get_test_config(cf.OOM_NUM_INSTANCES),
+        result = test_cuda_oom.test(
+            self.get_test_config(memory_fraction=cf.OOM_MEMORY_FRACTION),
             self.mode,
             cf.VERBOSE,
             cf.BENCHMARK_FILE,
@@ -81,12 +86,12 @@ class TestPipelineServer(unittest.TestCase):
             cf.SCALE,
             cf.TEST_RESULTS_DIR,
         )
-        self.assertFalse(success)
+        self.assertFalse(result.assert_false(), result.error)
 
     def test_addr_in_use(self):
         assert self.mode is not None
 
-        success = test_addr_in_use.test(
+        result = test_addr_in_use.test(
             self.get_test_config(),
             self.mode,
             cf.VERBOSE,
@@ -97,14 +102,14 @@ class TestPipelineServer(unittest.TestCase):
             cf.SCALE,
             cf.TEST_RESULTS_DIR,
         )
-        self.assertFalse(success)
+        self.assertFalse(result.assert_false(), result.error)
 
 
 class TestFullServer(TestPipelineServer):
-    def get_test_config(
-        self, num_instances: Optional[int] = None, _full: Optional[bool] = None
-    ) -> Dict[str, Any]:
-        config = super().get_test_config(num_instances, True)
+    full: Optional[bool] = True
+
+    def get_test_config(self, **kwargs) -> Dict[str, Any]:
+        config = super().get_test_config(**kwargs)
         config["ui_filter"]["dummy"] = False
         config["text_recognizer"]["dummy"] = False
         config["icon_labeler"]["dummy"] = False
@@ -112,10 +117,10 @@ class TestFullServer(TestPipelineServer):
 
 
 class TestLiteServer(TestPipelineServer):
-    def get_test_config(
-        self, num_instances: Optional[int] = None, _full: Optional[bool] = None
-    ) -> Dict[str, Any]:
-        config = super().get_test_config(num_instances, False)
+    full: Optional[bool] = False
+
+    def get_test_config(self, **kwargs) -> Dict[str, Any]:
+        config = super().get_test_config(**kwargs)
         config["ui_filter"]["dummy"] = False
         config["text_recognizer"]["dummy"] = True
         config["icon_labeler"]["dummy"] = True

@@ -1,9 +1,10 @@
 import copy
 import os
+import socket
 from typing import Any, Dict, Optional
 
 import tests.test_utils as tu
-from tests.test_utils import run_dummy_server, test_server
+from tests.test_utils import TestResult, test_server
 
 
 def get_test_config(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -20,24 +21,6 @@ def get_test_config(config: Dict[str, Any]) -> Dict[str, Any]:
     return new_config
 
 
-def get_dummy_config(config: Dict[str, Any]) -> Dict[str, Any]:
-    new_config = copy.deepcopy(config)
-
-    # Set log path.
-    test_config = new_config.get("test")
-    assert isinstance(test_config, dict)
-    test_config["log_path"] = os.devnull
-
-    # Set server config.
-    new_config["server"]["num_workers"] = 1
-    new_config["server"]["num_instances"] = 1
-    new_config["ui_filter"]["dummy"] = True
-    new_config["text_recognizer"]["dummy"] = True
-    new_config["icon_labeler"]["dummy"] = True
-
-    return new_config
-
-
 def test(
     config: Dict[str, Any],
     mode: str,
@@ -48,13 +31,11 @@ def test(
     chunk_size: int,
     scale: float,
     result_dir: Optional[str],
-) -> bool:
-    dummy_process = run_dummy_server(get_dummy_config(config))
-    if dummy_process is None:
-        return False
-
+) -> TestResult:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind((config["server"]["hostname"], config["server"]["port"]))
     tu.server_count -= 1
-    success = test_server(
+    result = test_server(
         get_test_config(config),
         mode,
         verbose,
@@ -65,8 +46,6 @@ def test(
         scale,
         result_dir,
     )
+    sock.close()
 
-    dummy_process.terminate()
-    dummy_process.join()
-
-    return success
+    return result

@@ -2,7 +2,7 @@ import copy
 import os
 from typing import Any, Dict, Optional
 
-from tests.test_utils import test_server
+from tests.test_utils import TestResult, test_server
 
 
 def get_test_config(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -29,7 +29,7 @@ def test(
     chunk_size: int,
     scale: float,
     result_dir: Optional[str],
-) -> bool:
+) -> TestResult:
     return test_server(
         get_test_config(config),
         mode,

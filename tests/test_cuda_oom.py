@@ -1,8 +1,43 @@
 import copy
 import os
+import unittest
+from multiprocessing import Process, SimpleQueue
 from typing import Any, Dict, Optional
 
-from tests.test_utils import run_dummy_server, test_server
+from tests.test_utils import TestResult, test_server
+
+import torch
+
+
+def occupy_gpu_memory(channel: SimpleQueue, fraction: float):
+    tensors = []
+    try:
+        if not torch.cuda.is_available():
+            raise Exception("CUDA is not available.")
+
+        for i in range(torch.cuda.device_count()):
+            free, _ = torch.cuda.mem_get_info(i)
+            tensors.append(
+                torch.empty(
+                    int(free * fraction), dtype=torch.int8, device=torch.device(i)
+                )
+            )
+        channel.put(None)
+    except Exception as e:
+        channel.put(e)
+    channel.get()
+
+
+def run_dummy_process(memory_fraction: float) -> Process:
+    channel: SimpleQueue[Optional[Exception]] = SimpleQueue()
+    dummy_process = Process(target=occupy_gpu_memory, args=(channel, memory_fraction))
+    dummy_process.start()
+    e = channel.get()
+    if e is not None:
+        dummy_process.kill()
+        dummy_process.join()
+        raise unittest.SkipTest(f"Fail to initialize the test: {e}")
+    return dummy_process
 
 
 def get_test_config(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -44,12 +79,10 @@ def test(
     chunk_size: int,
     scale: float,
     result_dir: Optional[str],
-) -> bool:
-    dummy_process = run_dummy_server(get_dummy_config(config))
-    if dummy_process is None:
-        return False
+) -> TestResult:
+    dummy_process = run_dummy_process(config["test"]["memory_fraction"])
 
-    success = test_server(
+    result = test_server(
         get_test_config(config),
         mode,
         verbose,
@@ -61,7 +94,7 @@ def test(
         result_dir,
     )
 
-    dummy_process.terminate()
+    dummy_process.kill()
     dummy_process.join()
 
-    return success
+    return result

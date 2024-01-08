@@ -3,7 +3,6 @@ import json
 import logging
 import os
 import socket as sock
-import sys
 import time
 from typing import Any, Dict, List, Optional
 
@@ -43,16 +42,31 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def readall(socket: sock.socket, num_bytes: int, chunk_size: int) -> bytes:
+def readall(
+    socket: sock.socket,
+    num_bytes: int,
+    chunk_size: int,
+    timeout: Optional[float] = None,
+) -> bytes:
+    deadline = old_timeout = None
+    if timeout is not None:
+        deadline = time.time() + timeout
+        old_timeout = socket.gettimeout()
+
     buffer = bytearray(num_bytes)
     curr = 0
     while curr < num_bytes:
+        if deadline is not None:
+            socket.settimeout(deadline - time.time())
         if chunk_size < 0:
             data = socket.recv(num_bytes)
         else:
             data = socket.recv(min(chunk_size, num_bytes - curr))
         buffer[curr : curr + len(data)] = data
         curr += len(data)
+
+    if old_timeout is not None:
+        socket.settimeout(old_timeout)
     return bytes(buffer)
 
 
@@ -73,27 +87,35 @@ def print_ui_info(elems: List[UiElement], fname: Optional[str] = None):
 
 
 def request(
-    hostname: str, port: int, fname: str, json_file: str, chunk_size: int
+    hostname: str,
+    port: int,
+    fname: str,
+    json_file: str,
+    chunk_size: int,
+    timeout: Optional[float] = None,
 ) -> Dict[str, Any]:
     s = sock.socket(sock.AF_INET, sock.SOCK_STREAM)
-    s.connect((hostname, port))
 
-    n = os.path.getsize(fname)
-    s.sendall(n.to_bytes(4, "big", signed=False))
-    with open(fname, "rb") as f:
-        s.sendfile(f)
-    n = os.path.getsize(json_file)
-    s.sendall(n.to_bytes(4, "big", signed=False))
-    with open(json_file, "rb") as f:
-        s.sendfile(f)
+    try:
+        s.connect((hostname, port))
 
-    n = int.from_bytes(readall(s, 4, chunk_size), "big", signed=False)
-    data = readall(s, n, chunk_size)
+        n = os.path.getsize(fname)
+        s.sendall(n.to_bytes(4, "big", signed=False))
+        with open(fname, "rb") as f:
+            s.sendfile(f)
+        n = os.path.getsize(json_file)
+        s.sendall(n.to_bytes(4, "big", signed=False))
+        with open(json_file, "rb") as f:
+            s.sendfile(f)
 
-    s.close()
+        n = int.from_bytes(readall(s, 4, chunk_size, timeout), "big", signed=False)
+        data = readall(s, n, chunk_size, timeout)
+        s.close()
 
-    # Visualize the results
-    return json.loads(data.decode("utf-8"))
+        return json.loads(data.decode("utf-8"))
+    except Exception as e:
+        s.close()
+        raise e
 
 
 def main(args: argparse.Namespace):

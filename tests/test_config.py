@@ -11,7 +11,9 @@ TEST_RESULTS_DIR = os.path.join("tests", "res")
 VERBOSE = True
 CHUNK_SIZE = 1024
 SCALE = 0.5
-OOM_NUM_INSTANCES = 4
+OOM_MEMORY_FRACTION = 0.99
+SERVER_TIMEOUT = 20.0
+SOCKET_TIMEOUT = 20.0
 
 with open(CONFIG_FILE, "r") as f:
     SERVER_CONFIG = json.load(f)
