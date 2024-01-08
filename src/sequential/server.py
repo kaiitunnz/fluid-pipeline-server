@@ -147,13 +147,17 @@ class PipelineServer(IPipelineServer):
         """
         self.logger.info("Starting the pipeline server...")
 
-        if warmup_image is not None:
-            self.warmup(warmup_image)
-
         self.manager.start()
 
         with ThreadPool(processes=self.num_workers) as pool:
             self._register_signal_handlers(pool)
+
+            if warmup_image is not None:
+                try:
+                    self.warmup(warmup_image)
+                except Exception as e:
+                    self.logger.error(f"[{self.manager.name}] Fatal error occured: {e}")
+                    os.kill(self.getpid(), signal.SIGTERM)
 
             self.socket = self.bind()
             if self.socket is None:
