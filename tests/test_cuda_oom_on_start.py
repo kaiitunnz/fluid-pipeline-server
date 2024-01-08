@@ -94,7 +94,8 @@ def test(
         result_dir,
     )
 
-    dummy_process.kill()
-    dummy_process.join()
+    if dummy_process.is_alive():
+        dummy_process.kill()
+        dummy_process.join()
 
     return result

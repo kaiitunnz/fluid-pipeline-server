@@ -4,7 +4,7 @@ import os
 from PIL import Image
 from ctypes import c_int
 from multiprocessing.synchronize import Condition
-from typing import Any, Dict, NamedTuple, Optional
+from typing import Any, Callable, Dict, NamedTuple, Optional
 
 import numpy as np
 from fluid_ai.utils import plot_ui_elements
@@ -44,11 +44,12 @@ def run_dummy_server(
     config: Dict[str, Any],
     mode: str = "hybrid",
     verbose: bool = False,
+    warm_up: bool = True,
     benchmark_file: Optional[str] = None,
 ) -> Optional[mp.Process]:
     cond = mp.Condition()
     is_ready = mp.Value(c_int, 0)
-    process = run_server(mode, verbose, benchmark_file, config, cond, is_ready)
+    process = run_server(mode, verbose, benchmark_file, config, cond, is_ready, warm_up)
 
     with cond:
         cond.wait_for(lambda: is_ready.value != 0)  # type: ignore
@@ -66,6 +67,7 @@ def run_server(
     config: Dict[str, Any],
     cond: Condition,
     is_ready,
+    warm_up: bool,
 ) -> mp.Process:
     global server_count
 
@@ -73,6 +75,8 @@ def run_server(
 
     def run():
         sample_file = config["server"].pop("sample_file")
+        if not warm_up:
+            sample_file = None
         log_path = config["test"].get("log_path")
         setup_log(log_path)
         print("Running a server with the following config:")
@@ -102,10 +106,12 @@ def test_server(
     chunk_size: int,
     scale: float,
     result_dir: Optional[str],
+    warm_up: bool = True,
+    on_ready: Optional[Callable[[], Any]] = None,
 ) -> TestResult:
     cond = mp.Condition()
     is_ready = mp.Value(c_int, 0)
-    process = run_server(mode, verbose, benchmark_file, config, cond, is_ready)
+    process = run_server(mode, verbose, benchmark_file, config, cond, is_ready, warm_up)
 
     with cond:
         cond.wait_for(lambda: is_ready.value != 0, config["test"].get("server_timeout"))  # type: ignore
@@ -116,6 +122,8 @@ def test_server(
             message = None
 
     if success:
+        if on_ready is not None:
+            on_ready()
         try:
             results = request(
                 config["server"]["hostname"],
@@ -139,6 +147,10 @@ def test_server(
             message = Exception("socket timeout")
 
     process.terminate()
-    process.join()
+    process.join(config["test"].get("exit_timeout"))
+    if process.exitcode is None:
+        process.kill()
+        success = False
+        message = Exception("server hangs")
 
     return TestResult(success, message)

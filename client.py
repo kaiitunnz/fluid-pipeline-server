@@ -62,6 +62,8 @@ def readall(
             data = socket.recv(num_bytes)
         else:
             data = socket.recv(min(chunk_size, num_bytes - curr))
+        if len(data) == 0:
+            raise ConnectionError()
         buffer[curr : curr + len(data)] = data
         curr += len(data)
 

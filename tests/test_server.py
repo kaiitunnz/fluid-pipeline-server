@@ -5,7 +5,12 @@ from typing import Any, Dict, Optional
 
 import tests.test_config as cf
 import tests.test_utils as tu
-from tests import test_addr_in_use, test_basic, test_cuda_oom
+from tests import (
+    test_addr_in_use,
+    test_basic,
+    test_cuda_oom_at_runtime,
+    test_cuda_oom_on_start,
+)
 
 
 class TestPipelineServer(unittest.TestCase):
@@ -15,6 +20,7 @@ class TestPipelineServer(unittest.TestCase):
     default_test_config: Dict[str, Any] = {
         "server_timeout": cf.SERVER_TIMEOUT,
         "socket_timeout": cf.SOCKET_TIMEOUT,
+        "exit_timeout": cf.EXIT_TIMEOUT,
     }
 
     @classmethod
@@ -72,10 +78,26 @@ class TestPipelineServer(unittest.TestCase):
         )
         self.assertTrue(result.assert_true(), result.error)
 
-    def test_cuda_oom(self):
+    def test_cuda_oom_on_start(self):
         assert self.mode is not None
 
-        result = test_cuda_oom.test(
+        result = test_cuda_oom_on_start.test(
+            self.get_test_config(memory_fraction=cf.OOM_MEMORY_FRACTION),
+            self.mode,
+            cf.VERBOSE,
+            cf.BENCHMARK_FILE,
+            cf.TEST_IMAGE_FILE,
+            cf.TEST_JSON_FILE,
+            cf.CHUNK_SIZE,
+            cf.SCALE,
+            cf.TEST_RESULTS_DIR,
+        )
+        self.assertFalse(result.assert_false(), result.error)
+
+    def test_cuda_oom_at_runtime(self):
+        assert self.mode is not None
+
+        result = test_cuda_oom_at_runtime.test(
             self.get_test_config(memory_fraction=cf.OOM_MEMORY_FRACTION),
             self.mode,
             cf.VERBOSE,
