@@ -2,7 +2,7 @@ import json
 import os
 import sys
 from argparse import ArgumentParser, Namespace
-from typing import Any, Dict, Callable, Optional
+from typing import Any, Dict, Optional
 
 import torch
 
@@ -27,8 +27,8 @@ from src.constructor import ModuleConstructor, PipelineConstructor
 from src.hybrid.server import PipelineServer as HybridServer
 from src.multiprocess.server import PipelineServer as MultiprocessServer
 from src.multithread.server import PipelineServer as MultithreadServer
-from src.pipeline import IPipelineServer
 from src.sequential.server import PipelineServer as SequentialServer
+from src.server import IPipelineServer, ServerCallbacks
 
 
 def parse_args() -> Namespace:
@@ -180,19 +180,19 @@ def init_pipeline_server(
     mode: str,
     verbose: bool,
     benchmark: Optional[str],
-    on_failure: Optional[Callable[[], Any]] = None,
+    callbacks: ServerCallbacks,
 ) -> IPipelineServer:
     pipeline_server: IPipelineServer
     if mode == "sequential":
         try:
             pipeline = pipeline_from_config(config)
         except Exception as e:
-            if on_failure is not None:
-                on_failure()
+            callbacks.on_failure()
             raise e
         pipeline_server = SequentialServer(
             **config["server"],
             pipeline=pipeline,
+            callbacks=callbacks,
             verbose=verbose,
             benchmark=benchmark is not None,
             benchmark_file=benchmark,
@@ -203,6 +203,7 @@ def init_pipeline_server(
         pipeline_server = MultithreadServer(
             **config["server"],
             pipeline=constructor,
+            callbacks=callbacks,
             verbose=verbose,
             benchmark=benchmark is not None,
             benchmark_file=benchmark,
@@ -212,6 +213,7 @@ def init_pipeline_server(
         pipeline_server = MultiprocessServer(
             **config["server"],
             pipeline=constructor,
+            callbacks=callbacks,
             verbose=verbose,
             benchmark=benchmark is not None,
             benchmark_file=benchmark,
@@ -221,6 +223,7 @@ def init_pipeline_server(
         pipeline_server = HybridServer(
             **config["server"],
             pipeline=constructor,
+            callbacks=callbacks,
             verbose=verbose,
             benchmark=benchmark is not None,
             benchmark_file=benchmark,
@@ -235,7 +238,7 @@ def main(args: Namespace):
         config = json.load(f)
     sample_file = config["server"].pop("sample_file")
     pipeline_server = init_pipeline_server(
-        config, args.mode, args.verbose, args.benchmark
+        config, args.mode, args.verbose, args.benchmark, ServerCallbacks()
     )
     pipeline_server.start(sample_file)
 

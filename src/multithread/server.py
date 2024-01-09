@@ -11,7 +11,7 @@ from src.benchmark import BENCHMARK_METRICS, Benchmarker
 from src.constructor import PipelineConstructor
 from src.logger import DefaultLogger
 from src.multithread.manager import PipelineManager
-from src.pipeline import IPipelineServer
+from src.server import IPipelineServer, ServerCallbacks
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 DEFAULT_BENCHMARK_FILE = "benchmark.csv"
@@ -65,6 +65,7 @@ class PipelineServer(IPipelineServer):
         hostname: str,
         port: int,
         pipeline: PipelineConstructor,
+        callbacks: ServerCallbacks,
         chunk_size: int = -1,
         max_image_size: int = -1,
         num_workers: int = 4,
@@ -83,6 +84,8 @@ class PipelineServer(IPipelineServer):
             Port to listen to client connections.
         pipeline: PipelineConstructor
             Constructor of the UI detection pipeline.
+        callbacks: ServerCallbacks
+            ServerCallbacks.
         chunk_size : int
             Chunk size for reading bytes from the sockets.
         max_image_size : int
@@ -99,7 +102,11 @@ class PipelineServer(IPipelineServer):
             Path to the file to save the benchmark results.
         """
         super().__init__(
-            hostname, port, None, DefaultLogger(PipelineServer._init_logger(verbose))
+            hostname,
+            port,
+            None,
+            DefaultLogger(PipelineServer._init_logger(verbose)),
+            callbacks,
         )
         self.pipeline = pipeline
         self.chunk_size = chunk_size
@@ -121,8 +128,8 @@ class PipelineServer(IPipelineServer):
         if len(kwargs) > 0:
             self.logger.warn(f"Got unexpected arguments: {kwargs}")
 
-    def start(self, warmup_image: Optional[str] = None):
-        """Starts the UI detection pipeline server
+    def serve(self, warmup_image: Optional[str] = None):
+        """Serves the UI detection pipeline server
 
         Parameters
         ----------

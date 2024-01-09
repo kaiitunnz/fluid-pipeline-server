@@ -4,6 +4,7 @@ import socket
 from typing import Any, Dict, Optional
 
 import tests.test_utils as tu
+from src.server import ServerCallbacks
 from tests.test_utils import TestResult, test_server
 
 
@@ -45,6 +46,7 @@ def test(
         chunk_size,
         scale,
         result_dir,
+        ServerCallbacks(),
     )
     sock.close()
 

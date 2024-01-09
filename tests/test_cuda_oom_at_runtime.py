@@ -1,9 +1,10 @@
 import copy
 import os
 import unittest
-from multiprocessing import Process, SimpleQueue
+from multiprocessing import Process, Semaphore, SimpleQueue
 from typing import Any, Callable, Dict, Optional, Tuple
 
+from src.server import ServerCallbacks
 from tests.test_utils import TestResult, test_server
 
 import torch
@@ -25,16 +26,22 @@ def occupy_gpu_memory(channel: SimpleQueue, fraction: float):
         channel.put(None)
     except Exception as e:
         channel.put(e)
-    channel.get()
+    Semaphore(0).acquire()
 
 
-def get_on_ready_callback(memory_fraction: float) -> Tuple[Process, Callable[[], Any]]:
+def get_on_ready_callback(
+    memory_fraction: float,
+) -> Tuple[Process, Callable[[bool], Any]]:
     channel: SimpleQueue[Optional[Exception]] = SimpleQueue()
     dummy_process = Process(target=occupy_gpu_memory, args=(channel, memory_fraction))
-    return dummy_process, (lambda: run_dummy_process(channel, dummy_process))
+    return dummy_process, (
+        lambda success: run_dummy_process(success, channel, dummy_process)
+    )
 
 
-def run_dummy_process(channel: SimpleQueue, process: Process):
+def run_dummy_process(success: bool, channel: SimpleQueue, process: Process):
+    if not success:
+        return
     process.start()
     e = channel.get()
     if e is not None:
@@ -54,21 +61,6 @@ def get_test_config(config: Dict[str, Any]) -> Dict[str, Any]:
         basename = os.path.basename(log_path)
         prefix = __name__.split(".")[-1]
         test_config["log_path"] = os.path.join(dirname, f"{prefix}_{basename}")
-    return new_config
-
-
-def get_dummy_config(config: Dict[str, Any]) -> Dict[str, Any]:
-    new_config = copy.deepcopy(config)
-
-    # Set log path.
-    test_config = new_config.get("test")
-    assert isinstance(test_config, dict)
-    test_config["log_path"] = os.devnull
-
-    # Set server config.
-    new_config["server"]["num_workers"] = 1
-    new_config["server"]["num_instances"] = test_config["num_instances"]
-
     return new_config
 
 
@@ -96,6 +88,7 @@ def test(
             chunk_size,
             scale,
             result_dir,
+            ServerCallbacks(),
             warm_up=False,
             on_ready=on_ready,
         )

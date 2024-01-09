@@ -1,3 +1,4 @@
+import functools
 import json
 import multiprocessing as mp
 import os
@@ -11,6 +12,7 @@ from fluid_ai.utils import plot_ui_elements
 
 from client import print_ui_info, request
 from main import init_pipeline_server, setup_log
+from src.server import ServerCallbacks
 from src.utils import parse_results
 
 
@@ -49,7 +51,16 @@ def run_dummy_server(
 ) -> Optional[mp.Process]:
     cond = mp.Condition()
     is_ready = mp.Value(c_int, 0)
-    process = run_server(mode, verbose, benchmark_file, config, cond, is_ready, warm_up)
+    process = run_server(
+        mode,
+        verbose,
+        benchmark_file,
+        config,
+        cond,
+        is_ready,
+        warm_up,
+        ServerCallbacks(),
+    )
 
     with cond:
         cond.wait_for(lambda: is_ready.value != 0)  # type: ignore
@@ -68,6 +79,7 @@ def run_server(
     cond: Condition,
     is_ready,
     warm_up: bool,
+    server_callbacks: ServerCallbacks,
 ) -> mp.Process:
     global server_count
 
@@ -82,12 +94,11 @@ def run_server(
         print("Running a server with the following config:")
         print(json.dumps(config, indent=4), flush=True)
         print()
-        on_failure_ = lambda: on_failure(cond, is_ready)
+        server_callbacks.on_ready = lambda: on_ready(cond, is_ready)
+        server_callbacks.on_failure = lambda: on_failure(cond, is_ready)
         server = init_pipeline_server(
-            config, mode, verbose, benchmark_file, on_failure_
+            config, mode, verbose, benchmark_file, server_callbacks
         )
-        server._on_ready = lambda: on_ready(cond, is_ready)
-        server._on_failure = on_failure_
         server.start(sample_file)
 
     process = mp.Process(target=run)
@@ -106,12 +117,20 @@ def test_server(
     chunk_size: int,
     scale: float,
     result_dir: Optional[str],
+    server_callbacks: ServerCallbacks,
     warm_up: bool = True,
-    on_ready: Optional[Callable[[], Any]] = None,
+    on_ready: Optional[Callable[[bool], Any]] = None,
+    on_server_exit: Optional[Callable[[Condition, Any], None]] = None,
 ) -> TestResult:
     cond = mp.Condition()
     is_ready = mp.Value(c_int, 0)
-    process = run_server(mode, verbose, benchmark_file, config, cond, is_ready, warm_up)
+
+    if on_server_exit is not None:
+        server_callbacks.on_exit = functools.partial(on_server_exit, cond, is_ready)
+
+    process = run_server(
+        mode, verbose, benchmark_file, config, cond, is_ready, warm_up, server_callbacks
+    )
 
     with cond:
         cond.wait_for(lambda: is_ready.value != 0, config["test"].get("server_timeout"))  # type: ignore
@@ -121,9 +140,18 @@ def test_server(
         else:
             message = None
 
+    if on_ready is not None:
+        try:
+            on_ready(success)  # Call the given on-ready callback.
+        except Exception as e:
+            process.terminate()
+            process.join(config["test"].get("exit_timeout"))
+            if process.exitcode is None:
+                process.kill()
+                raise Exception(f"On-ready callback failed and server hangs: {e}")
+            raise e
+
     if success:
-        if on_ready is not None:
-            on_ready()
         try:
             results = request(
                 config["server"]["hostname"],

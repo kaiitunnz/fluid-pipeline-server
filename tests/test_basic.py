@@ -2,6 +2,7 @@ import copy
 import os
 from typing import Any, Dict, Optional
 
+from src.server import ServerCallbacks
 from tests.test_utils import TestResult, test_server
 
 
@@ -40,4 +41,5 @@ def test(
         chunk_size,
         scale,
         result_dir,
+        ServerCallbacks(),
     )
