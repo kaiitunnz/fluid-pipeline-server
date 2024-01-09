@@ -9,6 +9,7 @@ from tests import (
     test_addr_in_use,
     test_basic,
     test_cuda_oom_at_runtime,
+    test_cuda_oom_on_init,
     test_cuda_oom_on_start,
 )
 
@@ -77,6 +78,22 @@ class TestPipelineServer(unittest.TestCase):
             cf.TEST_RESULTS_DIR,
         )
         self.assertTrue(result.assert_true(), result.error)
+
+    def test_cuda_oom_on_init(self):
+        assert self.mode is not None
+
+        result = test_cuda_oom_on_init.test(
+            self.get_test_config(memory_fraction=cf.OOM_MEMORY_FRACTION),
+            self.mode,
+            cf.VERBOSE,
+            cf.BENCHMARK_FILE,
+            cf.TEST_IMAGE_FILE,
+            cf.TEST_JSON_FILE,
+            cf.CHUNK_SIZE,
+            cf.SCALE,
+            cf.TEST_RESULTS_DIR,
+        )
+        self.assertFalse(result.assert_false(), result.error)
 
     def test_cuda_oom_on_start(self):
         assert self.mode is not None

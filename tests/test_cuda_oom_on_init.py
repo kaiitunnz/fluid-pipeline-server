@@ -1,36 +1,21 @@
 import copy
-import functools
-import multiprocessing as mp
 import os
 import unittest
-from multiprocessing.synchronize import Semaphore
+from multiprocessing import Process, Semaphore, SimpleQueue
 from typing import Any, Dict, Optional
 
 from src.server import ServerCallbacks
-from tests.test_utils import TestResult, test_server, on_failure
+from tests.test_utils import TestResult, test_server
 
 import torch
 
 
-def on_start(start_sema: Semaphore, continue_sema: Semaphore):
-    start_sema.release()
-    continue_sema.acquire()
-
-
-def occupy_gpu_memory(
-    channel: mp.SimpleQueue,
-    start_sema: Semaphore,
-    continue_sema: Semaphore,
-    fraction: float,
-):
-    if not torch.cuda.is_available():
-        channel.put(Exception("CUDA is not available."))
-        return
-    channel.put(None)
-
-    start_sema.acquire()
+def occupy_gpu_memory(channel: SimpleQueue, fraction: float):
     tensors = []
     try:
+        if not torch.cuda.is_available():
+            raise Exception("CUDA is not available.")
+
         for i in range(torch.cuda.device_count()):
             free, _ = torch.cuda.mem_get_info(i)
             tensors.append(
@@ -41,20 +26,12 @@ def occupy_gpu_memory(
         channel.put(None)
     except Exception as e:
         channel.put(e)
-    continue_sema.release()
-    mp.Semaphore(0).acquire()
+    Semaphore(0).acquire()
 
 
-def run_dummy_process(
-    channel: mp.SimpleQueue,
-    start_sema: Semaphore,
-    continue_sema: Semaphore,
-    memory_fraction: float,
-) -> mp.Process:
-    dummy_process = mp.Process(
-        target=occupy_gpu_memory,
-        args=(channel, start_sema, continue_sema, memory_fraction),
-    )
+def run_dummy_process(memory_fraction: float) -> Process:
+    channel: SimpleQueue[Optional[Exception]] = SimpleQueue()
+    dummy_process = Process(target=occupy_gpu_memory, args=(channel, memory_fraction))
     dummy_process.start()
     e = channel.get()
     if e is not None:
@@ -104,13 +81,7 @@ def test(
     scale: float,
     result_dir: Optional[str],
 ) -> TestResult:
-    channel: mp.SimpleQueue[Optional[Exception]] = mp.SimpleQueue()
-    start_sema = mp.Semaphore(0)
-    continue_sema = mp.Semaphore(0)
-
-    dummy_process = run_dummy_process(
-        channel, start_sema, continue_sema, config["test"]["memory_fraction"]
-    )
+    dummy_process = run_dummy_process(config["test"]["memory_fraction"])
 
     result = test_server(
         get_test_config(config),
@@ -122,15 +93,8 @@ def test(
         chunk_size,
         scale,
         result_dir,
-        ServerCallbacks(
-            on_start=functools.partial(on_start, start_sema, continue_sema),
-        ),
-        on_server_exit=on_failure,
+        ServerCallbacks(),
     )
-
-    start_error = channel.get()
-    if start_error is not None:
-        result = TestResult(False, start_error)
 
     if dummy_process.is_alive():
         dummy_process.kill()
