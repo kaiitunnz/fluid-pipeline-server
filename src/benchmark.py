@@ -15,6 +15,7 @@ BENCHMARK_METRICS = [
     "UI processing time",
     "Text recognition time",
     "Icon labeling time",
+    "UI relation time",
     "Processing time",
 ]
 """

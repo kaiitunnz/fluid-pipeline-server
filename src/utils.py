@@ -33,8 +33,10 @@ def parse_results(img: np.ndarray, results: Dict[str, Any]) -> List[UiElement]:
             unchecked=True,
         )
         info = elem["info"]
+        relation = elem["relation"]
         ui_element = UiElement(name, nbox, img)
         ui_element.info = info
+        ui_element.relation = relation
         elems.append(ui_element)
     return elems
 
@@ -89,7 +91,8 @@ def json_to_ui(json_elements: str, screenshot: Array) -> List[UiElement]:
     for elem in elements:
         name = elem["class"]
         position = elem["position"]
-        info = elem["info"]
+        info = elem.get("info")
+        relation = elem.get("relation")
         nbox = BBox(
             (position["x_min"], position["y_min"]),
             (position["x_max"], position["y_max"]),
@@ -101,6 +104,7 @@ def json_to_ui(json_elements: str, screenshot: Array) -> List[UiElement]:
                 bbox=nbox,
                 screenshot=screenshot,
                 info=info,
+                relation=relation,
             )
         )
     return result
@@ -153,6 +157,7 @@ def _elem_to_dict(elem: UiElement) -> Dict[str, Any]:
             "y_max": y1,
         },
         "info": elem.info,
+        "relation": elem.relation,
     }
 
 

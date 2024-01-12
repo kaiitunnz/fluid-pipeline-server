@@ -78,10 +78,10 @@ def print_ui_info(elems: List[UiElement], fname: Optional[str] = None):
     for i, e in enumerate(elems, 1):
         info = []
         info.append(f'class: "{e.name}"')
-        if "icon_label" in e.info:
-            info.append(f'label: "{e.info["icon_label"]}"')
-        if "text" in e.info:
-            info.append(f'text: "{e.info["text"]}"')
+        for k, v in e.info.items():
+            info.append(f'{k}: "{v}"')
+        for k, v in e.relation.items():
+            info.append(f"{k}: {v}")
         print(f"({i}) {', '.join(info)}", file=outfile)
 
     if outfile is not None:

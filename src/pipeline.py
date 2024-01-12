@@ -9,6 +9,7 @@ from fluid_ai.ocr import BaseOCR
 from fluid_ai.ui.detection import BaseUiDetector
 from fluid_ai.ui.filter import BaseUiFilter
 from fluid_ai.ui.matching import BaseUiMatching
+from fluid_ai.ui.relation import BaseUiRelation
 
 
 class PipelineModule(Enum):
@@ -35,6 +36,10 @@ class PipelineModule(Enum):
     ICON_LABELER = "icon_labeler"
     """
     Icon labeling module.
+    """
+    RELATION = "relation"
+    """
+    UI relation module.
     """
 
     @staticmethod
@@ -194,5 +199,31 @@ class PipelineModule(Enum):
             Resulting list of UI elements.
         """
         assert isinstance(module, BaseIconLabeler)
+        module(elements)
+        return elements
+
+    @staticmethod
+    def relate(
+        _: int, elements: List[UiElement], module: UiDetectionModule
+    ) -> List[UiElement]:
+        """Determines the relation between UI elements
+
+        The relation of each UI element, `element`, is stored with a "<relation>"
+        key in `element.relation`, where "<relation>" is the relation name.
+
+        Parameters
+        ----------
+        elements : List[UiElement]
+            List of UI elements to be processed. The order of the UI elements in the
+            list should not be modified afterwards.
+        module : UiDetectionModule
+            UI detection pipeline module. Must inherit `BaseUiRelation`.
+
+        Returns
+        -------
+        List[UiElement]
+            Resulting list of UI elements.
+        """
+        assert isinstance(module, BaseUiRelation)
         module(elements)
         return elements

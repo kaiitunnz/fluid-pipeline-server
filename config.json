@@ -42,6 +42,14 @@
       "device": "cuda:0"
     }
   },
+  "ui_relation": {
+    "method": "overlap",
+    "dummy": false,
+    "is_thread": false,
+    "args": {
+      "iou_threshold": 0
+    }
+  },
   "special_elements": {
     "text": ["TEXT", "LABEL", "TEXT_INPUT", "BUTTON", "SPINNER"],
     "icon": ["PICTOGRAM"]

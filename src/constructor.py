@@ -93,6 +93,7 @@ class PipelineConstructor:
         matcher: ModuleConstructor,
         text_recognizer: ModuleConstructor,
         icon_labeler: ModuleConstructor,
+        relation: ModuleConstructor,
         textual_elements: List[str],
         icon_elements: List[str],
         test_mode: bool = False,
@@ -110,6 +111,8 @@ class PipelineConstructor:
             Constructor for a text recognition module.
         icon_labeler : ModuleConstructor
             Constructor for an icon labeling module.
+        relation: ModuleConstructor
+            Constructor for a UI relation module.
         textual_elements : List[str]
             List of textual UI class names.
         icon_elements : List[str]
@@ -125,12 +128,14 @@ class PipelineConstructor:
         filter.func = PipelineModule.do_filter
         text_recognizer.func = PipelineModule.recognize_texts
         icon_labeler.func = PipelineModule.label_icons
+        relation.func = PipelineModule.relate
         self.modules = {
             PipelineModule.DETECTOR: detector,
             PipelineModule.FILTER: filter,
             PipelineModule.MATCHER: matcher,
             PipelineModule.TEXT_RECOGNIZER: text_recognizer,
             PipelineModule.ICON_LABELER: icon_labeler,
+            PipelineModule.RELATION: relation,
         }
         self.textual_elements = textual_elements
         self.icon_elements = icon_elements

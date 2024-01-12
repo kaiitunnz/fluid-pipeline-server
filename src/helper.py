@@ -304,11 +304,18 @@ class IPipelineHelper:
             results.extend(self.wait(PipelineModule.ICON_LABELER))
             icon_time = time.time() - icon_start  # bench
 
+        # Extract UI relation.
+        self.log_debug(addr, "Extracting UI relation.")
+        relation_start = time.time()  # bench
+        self.send(PipelineModule.RELATION, job_no, results)
+        results = self.wait(PipelineModule.RELATION)
+        relation_time = time.time() - relation_start  # bench
+
         processing_time = time.time() - detection_start  # bench
         if self.benchmarker is None:
             results_json = ui_to_json(screenshot_img, results).encode("utf-8")
         else:
-            entry = [waiting_time, detection_time, filter_time, matching_time, ui_processing_time, text_time, icon_time, processing_time]  # type: ignore
+            entry = [waiting_time, detection_time, filter_time, matching_time, ui_processing_time, text_time, icon_time, relation_time, processing_time]  # type: ignore
             self.benchmarker.add(entry)
             metrics = {"keys": self.benchmarker.metrics, "values": entry}
             results_json = ui_to_json(screenshot_img, results, metrics=metrics).encode(
@@ -504,18 +511,26 @@ class IPipelineHelper:
         # Partition the result.
         text_elems = []
         icon_elems = []
+        results = []
         for e in matched:
             if e.name in self.textual_elements:
                 text_elems.append(e)
             elif e.name in self.icon_elements:
                 icon_elems.append(e)
+            else:
+                results.append(e)
 
         # Extract UI info.
         self.send(PipelineModule.TEXT_RECOGNIZER, job_no, text_elems)
         self.send(PipelineModule.ICON_LABELER, job_no, icon_elems)
-        self.wait(PipelineModule.TEXT_RECOGNIZER)
-        self.wait(PipelineModule.ICON_LABELER)
+        results.extend(self.wait(PipelineModule.TEXT_RECOGNIZER))
+        results.extend(self.wait(PipelineModule.ICON_LABELER))
         self.logger.debug(f"[{name}] ({PipelineModule.TEXT_RECOGNIZER.value}) PASSED.")
         self.logger.debug(f"[{name}] ({PipelineModule.ICON_LABELER.value}) PASSED.")
+
+        # Extract UI relation.
+        self.send(PipelineModule.RELATION, job_no, results)
+        self.wait(PipelineModule.RELATION)
+        self.logger.debug(f"[{name}] ({PipelineModule.RELATION.value}) PASSED.")
 
         return success

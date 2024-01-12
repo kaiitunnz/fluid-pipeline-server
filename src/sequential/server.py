@@ -248,6 +248,10 @@ class PipelineServer(IPipelineServer):
         self.logger.debug(f"[{name}] ({PipelineModule.TEXT_RECOGNIZER.value}) PASSED.")
         self.logger.debug(f"[{name}] ({PipelineModule.ICON_LABELER.value}) PASSED.")
 
+        # Extract UI relation.
+        self.pipeline.relation(matched)
+        self.logger.debug(f"[{name}] ({PipelineModule.RELATION.value}) PASSED.")
+
         if success:
             self.logger.debug(f"[{name}] Warm-up complete.")
         else:

@@ -22,6 +22,7 @@ from fluid_ai.ui.matching import (
     HogUiMatching,
     GistUiMatching,
 )
+from fluid_ai.ui.relation import BaseUiRelation, DummyUiRelation, UiOverlap
 
 from src.constructor import ModuleConstructor, PipelineConstructor
 from src.hybrid.server import PipelineServer as HybridServer
@@ -97,6 +98,16 @@ def pipeline_from_config(config: Dict[str, Any]) -> UiDetectionPipeline:
     else:
         icon_labeler = ClassifierIconLabeler(**config["icon_labeler"]["args"])
 
+    relation: BaseUiRelation
+    if config["ui_relation"]["dummy"]:
+        relation = DummyUiRelation()
+    else:
+        relation_method = config["ui_relation"]["method"].lower()
+        if relation_method == "overlap":
+            relation = UiOverlap(**config["ui_relation"]["args"])
+        else:
+            raise NotImplementedError("The UI relation method is not implemented")
+
     return UiDetectionPipeline(
         detector,
         filter,
@@ -105,6 +116,7 @@ def pipeline_from_config(config: Dict[str, Any]) -> UiDetectionPipeline:
         config["special_elements"]["text"],
         icon_labeler,
         config["special_elements"]["icon"],
+        relation,
     )
 
 
@@ -163,12 +175,26 @@ def constructor_from_config(config: Dict[str, Any]) -> PipelineConstructor:
             **config["icon_labeler"]["args"],
         )
 
+    if config["ui_relation"]["dummy"]:
+        relation = ModuleConstructor(DummyUiRelation)
+    else:
+        relation_method = config["ui_relation"]["method"].lower()
+        if relation_method == "overlap":
+            relation = ModuleConstructor(
+                UiOverlap,
+                is_thread=config["ui_relation"]["is_thread"],
+                **config["ui_relation"]["args"],
+            )
+        else:
+            raise NotImplementedError("The UI relation method is not implemented")
+
     return PipelineConstructor(
         detector,
         filter,
         matcher,
         text_recognizer,
         icon_labeler,
+        relation,
         config["special_elements"]["text"],
         config["special_elements"]["icon"],
         test_mode=config["test_mode"],
