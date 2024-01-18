@@ -208,7 +208,7 @@ class IPipelineHelper:
         waiting_time: float,
         addr: Tuple[str, int],
         screenshot_img: np.ndarray,
-        base_elements: Optional[List[UiElement]],
+        base_elements: List[UiElement],
         test_mode: bool,
     ) -> bytes:
         """Executes the UI detection process
@@ -411,19 +411,18 @@ class IPipelineHelper:
 
             # Parse the UI-element payload.
             base_elements = (
-                None
+                []
                 if element_payload is None
                 else json_to_ui(
                     element_payload.decode(encoding="utf-8"), screenshot_img
                 )
             )
-            if base_elements is not None:
-                self.log_debug(
-                    addr, f"Received {len(base_elements)} additional UI elements."
-                )
-                if test_mode:
-                    with open(f"{SAVE_IMG_DIR}/base_elements{job_no}.pkl", "wb") as f:
-                        pickle.dump(base_elements, f)
+            self.log_debug(
+                addr, f"Received {len(base_elements)} additional UI elements."
+            )
+            if test_mode:
+                with open(f"{SAVE_IMG_DIR}/base_elements{job_no}.pkl", "wb") as f:
+                    pickle.dump(base_elements, f)
 
             # Process the screenshot and additional UI elements.
             results_json = self.process(
